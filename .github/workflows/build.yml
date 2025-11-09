@@ -7,6 +7,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+        BUILD_ROOT: ${{github.workspace}}
 
     steps:
     - uses: actions/checkout@v4
@@ -36,11 +38,11 @@ jobs:
       run: ccache -s
     
     - name: Update glslang external sources
-      working-directory: ${{env.BENCH_ROOT}}/3rdparty/glslang
+      working-directory: ${{env.BUILD_ROOT}}/3rdparty/glslang
       run: python update_glslang_sources.py
 
     - name: Configure CMake
-      working-directory: ${{env.BENCH_ROOT}}
+      working-directory: ${{env.BUILD_ROOT}}
       run: |
         cmake -B build \
         -DCMAKE_C_COMPILER_LAUNCHER=ccache \
