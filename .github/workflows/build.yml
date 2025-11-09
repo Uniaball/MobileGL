@@ -40,6 +40,7 @@ jobs:
       run: python update_glslang_sources.py
 
     - name: Configure CMake
+      working-directory: ${{env.BENCH_ROOT}}
       run: |
         cmake -B build \
         -DCMAKE_C_COMPILER_LAUNCHER=ccache \
