@@ -84,9 +84,10 @@ namespace MobileGL {
                             m_shaders[i]->GetShaderSource().c_str());
                 }
 
-                MG_Util::ShaderTranspiler::ProgramAttrib attrib{
-                    .shaders = Move(shaders),
-                };
+                MG_Util::ShaderTranspiler::ProgramAttrib attrib{.shaders = Move(shaders),
+                                                                .explicitVertexInLocations = m_explicitAttribLocations,
+                                                                .explicitFragmentOutLocations =
+                                                                    m_explicitFragDataLocation};
 
                 MGLOG_D("ProgramObject %u: Calling ShaderCompiler::LinkProgram", m_externalIndex);
                 auto result = MG_Util::ShaderTranspiler::ShaderCompiler::LinkProgram(attrib);
@@ -148,7 +149,7 @@ namespace MobileGL {
                 for (int i = 0; i < m_activeUniformCount; i++) {
                     auto& uniform = m_program->getUniform(i);
                     auto location = uniform.layoutLocation();
-                    if (location != 4095) {
+                    if (location != glslang::TQualifier::layoutLocationEnd) {
                         m_maxUniformLocation = std::max(m_maxUniformLocation, location);
                     }
                     m_uniformNameMaxLength = std::max(m_uniformNameMaxLength, (Int)uniform.name.length());
@@ -170,7 +171,7 @@ namespace MobileGL {
                 }
 
                 // i-th elements refers to uniform at layout(location = i, ...)
-                m_uniformIndexInTProgram.resize(m_maxUniformLocation + 1, 4095);
+                m_uniformIndexInTProgram.resize(m_maxUniformLocation + 1, glslang::TQualifier::layoutLocationEnd);
                 m_uniformSamplerOrImageUnitIndex.resize(m_maxUniformLocation + 1, -1);
 
                 Vector<int> unallocatedUniformIndex;
@@ -179,7 +180,7 @@ namespace MobileGL {
                 for (int i = 0; i < m_activeUniformCount; i++) {
                     auto& uniform = m_program->getUniform(i);
                     auto location = uniform.layoutLocation();
-                    if (m_uniformLocations[uniform.name] == 4095) {
+                    if (m_uniformLocations[uniform.name] == glslang::TQualifier::layoutLocationEnd) {
                         unallocatedUniformIndex.emplace_back(i);
                         MGLOG_D("ProgramObject %u: Reflection - uniform '%s' is unallocated, will assign later",
                                 m_externalIndex, uniform.name.c_str());
@@ -194,7 +195,7 @@ namespace MobileGL {
                 for (auto index : unallocatedUniformIndex) {
                     auto& uniform = m_program->getUniform(index);
                     for (; locNeedle <= m_maxUniformLocation; locNeedle++) {
-                        if (m_uniformIndexInTProgram[locNeedle] != 4095) continue;
+                        if (m_uniformIndexInTProgram[locNeedle] != glslang::TQualifier::layoutLocationEnd) continue;
                         // Found a vacant location at locNeedle
                         m_uniformIndexInTProgram[locNeedle] = index;
                         m_uniformLocations[uniform.name] = locNeedle;
@@ -206,13 +207,14 @@ namespace MobileGL {
                     }
                 }
 
+                // ------------ attributes (vertex in) ---------------
                 int inCount = m_program->getNumPipeInputs();
                 MGLOG_D("ProgramObject %u: Reflection - pipe input count (attributes) = %d", m_externalIndex, inCount);
 
                 int maxLoc = -1;
                 for (int i = 0; i < inCount; ++i) {
                     int loc = m_program->getPipeInput(i).layoutLocation();
-                    if (loc >= 0) maxLoc = std::max(maxLoc, loc);
+                    if (loc >= 0 && loc != glslang::TQualifier::layoutLocationEnd) maxLoc = std::max(maxLoc, loc);
                     MGLOG_D("ProgramObject %u: Reflection - pipe input[%d] name='%s' layoutLocation=%d glType=%u",
                             m_externalIndex, i, m_program->getPipeInput(i).name.c_str(), loc,
                             m_program->getPipeInput(i).glDefineType);
@@ -244,81 +246,86 @@ namespace MobileGL {
                     if (location >= 0 && location < (int)m_attribs.size()) {
                         m_attribs[location] = inVar.name;
                         m_attribTypes[location] = inVar.glDefineType;
-                        MGLOG_D("ProgramObject %u: Reflection - placed attrib '%s' at explicit location %d",
+                        MGLOG_D("ProgramObject %u: Reflection - got attrib '%s' at explicit location %d",
                                 m_externalIndex, inVar.name.c_str(), location);
-                    } else if (location >= (int)m_attribs.size()) {
-                        MGLOG_W("ProgramObject %u: ProgramObject::DoReflection - attrib location %d >= attribs.size() "
-                                "(%zu). Ignoring.",
-                                m_externalIndex, location, m_attribs.size());
-                        continue;
-                    } else {
-                        bool placed = false;
-                        for (size_t idx = 0; idx < m_attribs.size(); ++idx) {
-                            if (m_attribs[idx].empty()) {
-                                m_attribs[idx] = inVar.name;
-                                m_attribTypes[idx] = inVar.glDefineType;
-                                placed = true;
-                                MGLOG_D("ProgramObject %u: Reflection - placed attrib '%s' into free slot %zu",
-                                        m_externalIndex, inVar.name.c_str(), idx);
-                                break;
-                            }
-                        }
-                        if (!placed && (int)m_attribs.size() < maxAttribs) {
-                            m_attribs.push_back(inVar.name);
-                            m_attribTypes.push_back(inVar.glDefineType);
-                            placed = true;
-                            MGLOG_D("ProgramObject %u: Reflection - pushed attrib '%s' to new slot %zu",
-                                    m_externalIndex, inVar.name.c_str(), m_attribs.size() - 1);
-                        }
-                        if (!placed) {
-                            MGLOG_W("ProgramObject %u: ProgramObject::DoReflection - cannot place attrib '%s' (no free "
-                                    "slot and at max capacity). Ignoring.",
-                                    m_externalIndex, inVar.name.c_str());
-                        }
                     }
+                    // else if (location >= (int)m_attribs.size()) {
+                    //     MGLOG_W("ProgramObject %u: ProgramObject::DoReflection - attrib location %d >= attribs.size()
+                    //     "
+                    //             "(%zu). Ignoring.",
+                    //             m_externalIndex, location, m_attribs.size());
+                    //     continue;
+                    // }
+                    // else {
+                    //     bool placed = false;
+                    //     for (size_t idx = 0; idx < m_attribs.size(); ++idx) {
+                    //         if (m_attribs[idx].empty()) {
+                    //             m_attribs[idx] = inVar.name;
+                    //             m_attribTypes[idx] = inVar.glDefineType;
+                    //             placed = true;
+                    //             MGLOG_D("ProgramObject %u: Reflection - placed attrib '%s' into free slot %zu",
+                    //                     m_externalIndex, inVar.name.c_str(), idx);
+                    //             break;
+                    //         }
+                    //     }
+                    //     if (!placed && (int)m_attribs.size() < maxAttribs) {
+                    //         m_attribs.push_back(inVar.name);
+                    //         m_attribTypes.push_back(inVar.glDefineType);
+                    //         placed = true;
+                    //         MGLOG_D("ProgramObject %u: Reflection - pushed attrib '%s' to new slot %zu",
+                    //                 m_externalIndex, inVar.name.c_str(), m_attribs.size() - 1);
+                    //     }
+                    //     if (!placed) {
+                    //         MGLOG_W("ProgramObject %u: ProgramObject::DoReflection - cannot place attrib '%s' (no
+                    //         free "
+                    //                 "slot and at max capacity). Ignoring.",
+                    //                 m_externalIndex, inVar.name.c_str());
+                    //     }
+                    // }
                 }
 
                 // Implement glBindAttribLocation semantics (explicit locations set by user)
-                for (auto& [name, location] : m_explicitAttribLocations) {
-                    MGLOG_D("ProgramObject %u: Reflection - explicit attrib location request: name='%s' location=%d",
-                            m_externalIndex, name.c_str(), location);
-                    if (location < 0) continue;
-                    if (location >= (int)m_attribs.size()) {
-                        if (location >= maxAttribs) {
-                            MGLOG_W("ProgramObject %u: SetExplicitAttribLocation: requested location %d >= "
-                                    "GL_MAX_VERTEX_ATTRIBS (%d). Ignored for attribute '%s'.",
-                                    m_externalIndex, location, maxAttribs, name.c_str());
-                            continue;
-                        }
-                        m_attribs.resize(location + 1);
-                        m_attribTypes.resize(location + 1);
-                        MGLOG_D("ProgramObject %u: Reflection - resized attrib arrays to %zu to accommodate explicit "
-                                "location %d",
-                                m_externalIndex, m_attribs.size(), location);
-                    }
-
-                    if (m_attribs[location] != name) {
-                        auto it = std::find(m_attribs.begin(), m_attribs.end(), name);
-                        if (it == m_attribs.end()) {
-                            MGLOG_D("ProgramObject %u: Reflection - explicit attrib '%s' not found in current list, "
-                                    "skipping swap",
-                                    m_externalIndex, name.c_str());
-                            continue;
-                        }
-                        auto idx = std::distance(m_attribs.begin(), it);
-                        std::swap(m_attribs[location], m_attribs[idx]);
-                        std::swap(m_attribTypes[location], m_attribTypes[idx]);
-                        MGLOG_D("ProgramObject %u: Reflection - swapped attrib '%s' from idx %zu to explicit "
-                                "location %d",
-                                m_externalIndex, name.c_str(), idx, location);
-                    }
-
-                    for (SizeT idx = 0; idx < m_attribs.size(); ++idx) {
-                        m_attribLocation[m_attribs[idx]] = idx;
-                        MGLOG_D("ProgramObject %u: Reflection - attribLocation['%s'] = %zu", m_externalIndex,
-                                m_attribs[idx].c_str(), idx);
-                    }
-                }
+                // for (auto& [name, location] : m_explicitAttribLocations) {
+                //     MGLOG_D("ProgramObject %u: Reflection - explicit attrib location request: name='%s' location=%d",
+                //             m_externalIndex, name.c_str(), location);
+                //     if (location < 0) continue;
+                //     if (location >= (int)m_attribs.size()) {
+                //         if (location >= maxAttribs) {
+                //             MGLOG_W("ProgramObject %u: SetExplicitVertexInLocation: requested location %d >= "
+                //                     "GL_MAX_VERTEX_ATTRIBS (%d). Ignored for attribute '%s'.",
+                //                     m_externalIndex, location, maxAttribs, name.c_str());
+                //             continue;
+                //         }
+                //         m_attribs.resize(location + 1);
+                //         m_attribTypes.resize(location + 1);
+                //         MGLOG_D("ProgramObject %u: Reflection - resized attrib arrays to %zu to accommodate explicit
+                //         "
+                //                 "location %d",
+                //                 m_externalIndex, m_attribs.size(), location);
+                //     }
+                //
+                //     if (m_attribs[location] != name) {
+                //         auto it = std::find(m_attribs.begin(), m_attribs.end(), name);
+                //         if (it == m_attribs.end()) {
+                //             MGLOG_D("ProgramObject %u: Reflection - explicit attrib '%s' not found in current list, "
+                //                     "skipping swap",
+                //                     m_externalIndex, name.c_str());
+                //             continue;
+                //         }
+                //         auto idx = std::distance(m_attribs.begin(), it);
+                //         std::swap(m_attribs[location], m_attribs[idx]);
+                //         std::swap(m_attribTypes[location], m_attribTypes[idx]);
+                //         MGLOG_D("ProgramObject %u: Reflection - swapped attrib '%s' from idx %zu to explicit "
+                //                 "location %d",
+                //                 m_externalIndex, name.c_str(), idx, location);
+                //     }
+                //
+                //     for (SizeT idx = 0; idx < m_attribs.size(); ++idx) {
+                //         m_attribLocation[m_attribs[idx]] = idx;
+                //         MGLOG_D("ProgramObject %u: Reflection - attribLocation['%s'] = %zu", m_externalIndex,
+                //                 m_attribs[idx].c_str(), idx);
+                //     }
+                // }
 
                 // ---------- UBO ----------
                 int uboCount = m_program->getNumUniformBlocks();
@@ -358,16 +365,20 @@ namespace MobileGL {
                         MGLOG_E("ProgramObject %u: GenerateBinary - CompileShader failed for shader[%zu], aborting "
                                 "binary generation",
                                 m_externalIndex, i);
-                        assert(res); // keep original assert but log first
+                        MGLOG_E("ProgramObject %u: GenerateBinary - CompileShader return code %d, log:\n%s",
+                                m_externalIndex, res.error().errc, res.error().log.c_str());
+                        MGLOG_E("ProgramObject %u: GenerateBinary - last compiled shader src: \n%s", m_externalIndex,
+                                m_shaders[i]->GetShaderSource().c_str());
                     }
+                    assert(res); // keep original assert but log first
                     shaders[i] = res.value();
                     MGLOG_D("ProgramObject %u: GenerateBinary - compiled shader[%zu] -> TShader ptr %p",
                             m_externalIndex, i, shaders[i].get());
                 }
 
-                ProgramAttrib attrib{
-                    .shaders = Move(shaders),
-                };
+                ProgramAttrib attrib{.shaders = Move(shaders),
+                                     .explicitVertexInLocations = m_explicitAttribLocations,
+                                     .explicitFragmentOutLocations = m_explicitFragDataLocation};
                 MGLOG_D("ProgramObject %u: GenerateBinary - linking program for binary", m_externalIndex);
                 auto programResult = ShaderCompiler::LinkProgram(attrib);
                 if (!programResult) {
@@ -401,50 +412,53 @@ namespace MobileGL {
                     SpvcSession session(spv);
                     auto result = session.ParseMetaData();
                     if (result < 0) {
-                        MGLOG_E("ProgramObject %u: GenerateBinary - SpvcSession::ParseMetaData failed for module %zu, err = %d%s",
-                                m_externalIndex, i, result, (result == SPVC_ERROR_INVALID_SPIRV ? ". Probably no global UBO?" : ""));
+                        MGLOG_D("ProgramObject %u: GenerateBinary - SpvcSession::ParseMetaData failed for module %zu, "
+                                "err = %d%s",
+                                m_externalIndex, i, result,
+                                (result == SPVC_ERROR_INVALID_SPIRV ? ". Probably no global UBO?" : ""));
+                        m_uniformSizesInBytes.clear();
+                        m_uniformOffsets.clear();
+                        m_uboScratch.clear();
                         continue;
-                    }
-                    // auto srcResult = ShaderCompiler::DecompileShader(session);
-                    // assert(srcResult);
-                    // auto src = srcResult.value();
-                    // printf("decompiled src: \n%s\n", src.c_str());
-
-                    auto& meta = session.GetMetadata();
-                    auto size = meta.uboSize;
-                    MGLOG_D("ProgramObject %u: GenerateBinary - SPIR-V meta: uboSize=%zu plainUniformCount=%zu "
-                            "plainUniformOffsets=%zu",
-                            m_externalIndex, meta.uboSize, meta.plainUniformMemberSizesInBytes.size(),
-                            meta.plainUniformOffsetsInUBO.size());
-                    m_uboScratch.resize(size);
-                    m_uniformOffsets.resize(m_maxUniformLocation + 1);
-                    for (const auto& [name, offset] : meta.plainUniformOffsetsInUBO) {
-                        if (m_uniformLocations.find(name) != m_uniformLocations.end()) {
-                            m_uniformOffsets[m_uniformLocations[name]] = offset;
-                            MGLOG_D("ProgramObject %u: GenerateBinary - uniform '%s' offset=%u assigned to location %u",
+                    } else {
+                        auto& meta = session.GetMetadata();
+                        auto size = meta.uboSize;
+                        MGLOG_D("ProgramObject %u: GenerateBinary - SPIR-V meta: uboSize=%zu plainUniformCount=%zu "
+                                "plainUniformOffsets=%zu",
+                                m_externalIndex, meta.uboSize, meta.plainUniformMemberSizesInBytes.size(),
+                                meta.plainUniformOffsetsInUBO.size());
+                        m_uboScratch.resize(size);
+                        m_uniformOffsets.resize(m_maxUniformLocation + 1);
+                        for (const auto& [name, offset] : meta.plainUniformOffsetsInUBO) {
+                            if (m_uniformLocations.find(name) != m_uniformLocations.end()) {
+                                m_uniformOffsets[m_uniformLocations[name]] = offset;
+                                MGLOG_D(
+                                    "ProgramObject %u: GenerateBinary - uniform '%s' offset=%u assigned to location %u",
                                     m_externalIndex, name.c_str(), offset, m_uniformLocations[name]);
-                        } else {
-                            MGLOG_D("ProgramObject %u: GenerateBinary - uniform '%s' offset=%u but not found in "
-                                    "m_uniformLocations",
-                                    m_externalIndex, name.c_str(), offset);
+                            } else {
+                                MGLOG_D("ProgramObject %u: GenerateBinary - uniform '%s' offset=%u but not found in "
+                                        "m_uniformLocations",
+                                        m_externalIndex, name.c_str(), offset);
+                            }
                         }
-                    }
-                    m_uniformSizesInBytes.resize(m_maxUniformLocation + 1);
-                    for (const auto& [name, size] : meta.plainUniformMemberSizesInBytes) {
-                        if (m_uniformLocations.find(name) != m_uniformLocations.end()) {
-                            m_uniformSizesInBytes[m_uniformLocations[name]] = size;
-                            MGLOG_D("ProgramObject %u: GenerateBinary - uniform '%s' size=%u assigned to location %u",
+                        m_uniformSizesInBytes.resize(m_maxUniformLocation + 1);
+                        for (const auto& [name, size] : meta.plainUniformMemberSizesInBytes) {
+                            if (m_uniformLocations.find(name) != m_uniformLocations.end()) {
+                                m_uniformSizesInBytes[m_uniformLocations[name]] = size;
+                                MGLOG_D(
+                                    "ProgramObject %u: GenerateBinary - uniform '%s' size=%u assigned to location %u",
                                     m_externalIndex, name.c_str(), size, m_uniformLocations[name]);
-                        } else {
-                            MGLOG_D("ProgramObject %u: GenerateBinary - uniform '%s' size=%u but not found in "
-                                    "m_uniformLocations",
-                                    m_externalIndex, name.c_str(), size);
+                            } else {
+                                MGLOG_D("ProgramObject %u: GenerateBinary - uniform '%s' size=%u but not found in "
+                                        "m_uniformLocations",
+                                        m_externalIndex, name.c_str(), size);
+                            }
                         }
+                        // Only parse first module that contains uniform metadata
+                        MGLOG_D("ProgramObject %u: GenerateBinary - finished parsing module %zu; breaking after first "
+                                "valid metadata",
+                                m_externalIndex, i);
                     }
-                    // Only parse first module that contains uniform metadata
-                    MGLOG_D("ProgramObject %u: GenerateBinary - finished parsing module %zu; breaking after first "
-                            "valid metadata",
-                            m_externalIndex, i);
                     break;
                 }
             }
@@ -455,12 +469,27 @@ namespace MobileGL {
                 // will probably be useful when multi-threaded compilation
             }
 
-            void ProgramObject::SetExplicitAttribLocation(Uint index, const char* name) {
-                MGLOG_D("ProgramObject %u: SetExplicitAttribLocation called name='%s' index=%u", m_externalIndex, name,
-                        index);
+            void ProgramObject::SetExplicitVertexInLocation(Uint index, const char* name) {
+                MGLOG_D("ProgramObject %u: SetExplicitVertexInLocation called name='%s' index=%u", m_externalIndex,
+                        name, index);
                 m_explicitAttribLocations[name] = index;
-                MGLOG_D("ProgramObject %u: SetExplicitAttribLocation - stored explicit location for '%s' -> %u",
+                MGLOG_D("ProgramObject %u: SetExplicitVertexInLocation - stored explicit location for '%s' -> %u",
                         m_externalIndex, name, index);
+            }
+
+            void ProgramObject::SetExplicitFragmentOutLocation(Uint index, const char* name) {
+                MGLOG_D("ProgramObject %u: SetExplicitFragmentOutLocation called name='%s' index=%u", m_externalIndex,
+                        name, index);
+                m_explicitFragDataLocation[name] = index;
+                MGLOG_D("ProgramObject %u: SetExplicitFragmentOutLocation - stored explicit location for '%s' -> %u",
+                        m_externalIndex, name, index);
+            }
+
+            Int ProgramObject::GetFragmentDataLocation(const char* name) {
+                // TODO: should retrieve "post-mortem" location from glslang instead
+                auto it = m_explicitFragDataLocation.find(name);
+                if (it == m_explicitFragDataLocation.end()) return -1;
+                return it->second;
             }
         } // namespace GLState
     } // namespace MG_State

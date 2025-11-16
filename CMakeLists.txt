@@ -5,12 +5,17 @@ project("MobileGL")
 option(MOBILEGL_FORCE_RELEASE_OPT "Enable Release optimization flags in Debug build" OFF)
 
 if (NOT CMAKE_BUILD_TYPE STREQUAL "Debug" OR MOBILEGL_FORCE_RELEASE_OPT)
+    include(CheckIPOSupported)
+    check_ipo_supported(RESULT LTOSupported OUTPUT LTOError)
+    if (LTOSupported)
+        set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
+    endif()
+
     if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
-        add_compile_options(-O3 -ffunction-sections -fdata-sections -flto=thin)
-        add_link_options(-flto=thin -Wl,--gc-sections)
+        add_compile_options(-O3 -ffunction-sections -fdata-sections)
+        add_link_options(-Wl,--gc-sections)
     elseif (CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
         add_compile_options(/O2 /GL)
-        add_link_options(/LTCG)
     endif()
 endif()
 
@@ -28,6 +33,8 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 if (MSVC)
     set(CMAKE_CXX_FLAGS "/EHsc ${CMAKE_CXX_FLAGS}")
 endif()
+
+set(ENABLE_RTTI                ON  CACHE BOOL "Enables RTTI (will be took by glslang)" FORCE)
 
 set(ENABLE_GLSLANG_BINARIES    OFF CACHE BOOL "Disable glslangValidator/spirv-remap" FORCE)
 set(ENABLE_SPVREMAPPER         OFF CACHE BOOL "Disable SPVRemapper" FORCE)
@@ -81,6 +88,7 @@ set(SOURCE_FILES
     MobileGL/MG_Util/ShaderTranspiler/ShaderCompiler.cpp
     MobileGL/MG_Util/ShaderTranspiler/SpvcSession.cpp
     MobileGL/MG_Util/ShaderTranspiler/ShaderSourceProcessor.cpp
+    MobileGL/MG_Util/ShaderTranspiler/glslang/TMglGlslIoResolver.cpp
 
     MobileGL/MG_Util/BackendLoaders/OpenGL/Loader.cpp
 
@@ -94,6 +102,8 @@ set(SOURCE_FILES
     MobileGL/MG_Impl/EGLImpl/EGLWrapper/EGLWrapper.cpp
     
     # @INSERTION_POINT:SOURCE_FILE_GLIMPL@ #
+    MobileGL/MG_Impl/GLImpl/Sampler/Validators.cpp
+    MobileGL/MG_Impl/GLImpl/Sampler/GL_Sampler.cpp
     MobileGL/MG_Impl/GLImpl/Drawing/GL_Drawing.cpp
     MobileGL/MG_Impl/GLImpl/RenderState/GL_RenderState.cpp
     MobileGL/MG_Impl/GLImpl/Framebuffer/Validators.cpp
@@ -133,6 +143,8 @@ set(SOURCE_FILES
     MobileGL/MG_State/GLState/RenderState/RenderState.cpp
     MobileGL/MG_State/GLState/FramebufferState/FramebufferObject.cpp
     MobileGL/MG_State/GLState/FramebufferState/FramebufferState.cpp
+    MobileGL/MG_State/GLState/SamplerState/SamplerObject.cpp
+    MobileGL/MG_State/GLState/SamplerState/SamplerState.cpp
 )
 
 add_library(${CMAKE_PROJECT_NAME} SHARED 

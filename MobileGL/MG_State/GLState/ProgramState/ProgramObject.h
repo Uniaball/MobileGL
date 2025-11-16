@@ -17,7 +17,9 @@ namespace MobileGL {
                 void Link();
                 void MarkAsDeleted();
 
-                void SetExplicitAttribLocation(Uint index, const char* name);
+                void SetExplicitVertexInLocation(Uint index, const char* name);
+                void SetExplicitFragmentOutLocation(Uint index, const char* name);
+                Int GetFragmentDataLocation(const char* name);
 
                 Vector<SharedPtr<ShaderObject>>& GetAttachedShaders();
                 const String& GetInfoLog() const { return m_infoLog; }
@@ -104,7 +106,7 @@ namespace MobileGL {
 
                 Uint GetExternalIndex() const { return m_externalIndex; }
 
-                const UnorderedMap<String, Uint>& GetAttribLocationMap() const { return m_attribLocation; }
+//                const UnorderedMap<String, Uint>& GetAttribLocationMap() const { return m_attribLocation; }
 
             private:
                 void DoReflection();
@@ -119,12 +121,15 @@ namespace MobileGL {
 
                 Vector<Vector<unsigned>> m_generatedSpirv;
 
-                // Attributes
+                // Attributes (Vertex in)
                 UnorderedMap<String, Uint> m_explicitAttribLocations;
                 Vector<String> m_attribs;
                 Vector<GLenum> m_attribTypes;
                 // For SpvcSession::SetVertexAttribLocation()
-                UnorderedMap<String, Uint> m_attribLocation;
+//                UnorderedMap<String, Uint> m_attribLocation;
+
+                // FragData (Frag out)
+                UnorderedMap<String, Uint> m_explicitFragDataLocation;
 
                 // Uniforms
                 UnorderedMap<String, Uint> m_uniformLocations;

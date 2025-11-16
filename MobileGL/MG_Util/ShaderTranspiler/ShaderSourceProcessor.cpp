@@ -4,6 +4,25 @@ namespace MobileGL {
     namespace MG_Util {
         namespace ShaderTranspiler {
             void PreprocessShaderSource(ShaderStage stage, String& source) {
+                // remove multi-line comment
+                size_t commentStartPos = source.find("/*");
+                while (commentStartPos != std::string::npos) {
+                    size_t commentEndPos = source.find("*/", commentStartPos);
+                    // + length of "*/"
+                    source = source.replace(commentStartPos, commentEndPos - commentStartPos + 2, "");
+                    commentStartPos = source.find("/*", commentStartPos);
+                }
+
+                // remove #line directives
+                SizeT linedirPos = source.find("#line");
+                while (linedirPos != std::string::npos) {
+                    SizeT newlinePos = source.find('\n', linedirPos);
+                    // + length of "\n"
+                    source = source.replace(linedirPos, newlinePos - linedirPos + 1, "");
+                    linedirPos = source.find("#line", linedirPos);
+                }
+
+                // force #version
                 ShaderProfile profile = ShaderProfile::Core;
                 SizeT versionPos = source.find("#version");
 

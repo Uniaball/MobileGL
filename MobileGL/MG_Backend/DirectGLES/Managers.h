@@ -1,6 +1,7 @@
 #pragma once
 #include <Includes.h>
 #include "DirectGLES.h"
+#include "MG_State/GLState/SamplerState/SamplerObject.h"
 #include <MG_State/GLState/TextureState/TextureObject.h>
 #include <MG_State/GLState/Core.h>
 
@@ -73,6 +74,7 @@ namespace MobileGL::MG_Backend::DirectGLES {
             Uint m_backendTextureId = 0;
             Bool m_isInitialized = false;
             StateTextureBasicInfo m_prevTextureInfo;
+            SamplerParameters m_cacheSamplerParameters;
         };
 
         extern UnorderedMap<SharedPtr<MG_State::GLState::ITextureObject>, SharedPtr<BackendTextureObject>>
@@ -83,12 +85,33 @@ namespace MobileGL::MG_Backend::DirectGLES {
         class BackendFramebufferObject {
         public:
             BackendFramebufferObject();
-            void SyncToBackend(SharedPtr<MG_State::GLState::FramebufferObject>& stateFBOObject);
+            void SyncToBackend(SharedPtr<MG_State::GLState::FramebufferObject>& stateFBOObject,
+                               FramebufferTarget asTarget);
             Uint GetBackendFramebufferId() { return m_backendFBOId; }
             void Bind(FramebufferTarget target);
 
         private:
             Uint m_backendFBOId = 0;
+
+            /* this will save buffers in its original form,
+               reversion, absence or not consecutive are all allowed, as long as GL spec allows it
+               i.e. it could be like [COLOR_ATTACHMENT0, COLOR_ATTACHMENT5, NONE, COLOR_ATTACHMENT4]
+               Probably useful to re-link shader output according to this.
+               aka. realizing `glBindFragDataLocation`
+             */
+            GLenum m_frontendBuffers[MG_State::GLState::FramebufferObject::MAX_DRAW_BUFFERS] = {GL_NONE};
+            /* this will save buffers in its compacted GL form,
+               not consecutive is not allowed
+               i.e. it could be like [COLOR_ATTACHMENT0, COLOR_ATTACHMENT5, COLOR_ATTACHMENT4]
+               (no GL_NONE among those)
+             */
+            GLenum m_compactedFrontendBuffers[MG_State::GLState::FramebufferObject::MAX_DRAW_BUFFERS] = {GL_NONE};
+            /* this will save buffers in stricter ES rules
+               reversion, absence or not consecutive are not allowed, according to ES spec
+               i.e. it could be like [COLOR_ATTACHMENT0, COLOR_ATTACHMENT1, NONE, NONE, ...]
+               this array could be provided as data directly to ES `glDrawBuffers` function
+             */
+            GLenum m_backendBuffers[MG_State::GLState::FramebufferObject::MAX_DRAW_BUFFERS] = {GL_NONE};
         };
 
         extern UnorderedMap<SharedPtr<MG_State::GLState::FramebufferObject>, SharedPtr<BackendFramebufferObject>>
@@ -114,4 +137,22 @@ namespace MobileGL::MG_Backend::DirectGLES {
         extern UnorderedMap<SharedPtr<MG_State::GLState::ProgramObject>, SharedPtr<BackendProgramObjectImpl>>
             g_backendProgramObjects;
     } // namespace PrgramImpl
+
+    namespace SamplerImpl {
+        class BackendSamplerObject {
+        public:
+            BackendSamplerObject();
+            void SyncToBackend(SharedPtr<MG_State::GLState::SamplerObject>& stateSamplerObject);
+            void Bind(Uint unit);
+            Uint GetBackendSamplerId();
+
+        private:
+            Uint m_backendSamplerId = 0;
+            Bool m_isInitialized = false;
+            SamplerParameters m_cacheSamplerParameters;
+        };
+
+        extern UnorderedMap<SharedPtr<MG_State::GLState::SamplerObject>, SharedPtr<BackendSamplerObject>>
+            g_backendSamplerObjects;
+    } // namespace SamplerImpl
 } // namespace MobileGL::MG_Backend::DirectGLES

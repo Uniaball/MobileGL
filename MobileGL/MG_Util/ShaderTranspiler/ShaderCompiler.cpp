@@ -174,13 +174,19 @@ namespace MobileGL {
                     return std::unexpected(r);
                 }
 
-                UniquePtr<glslang::TIoMapResolver> resolver;
+                for (auto [name, loc]: attrib.explicitVertexInLocations) {
+                    MGLOG_D("%s: got explicitly set - layout(location = %d) %s;", __func__, loc, name.c_str());
+                }
+
+                // UniquePtr<glslang::TIoMapResolver> resolver;
+                UniquePtr<TMglGlslIoResolver> resolver;
                 for (unsigned stage = 0; stage < EShLangCount; stage++) {
-                    auto* pResolver = program->getGlslIoResolver((EShLanguage)stage);
-                    if (pResolver) {
-                        resolver = UniquePtr<glslang::TIoMapResolver>(pResolver);
-                        break;
-                    }
+                    if (program->getIntermediate((EShLanguage)stage) == nullptr)
+                        continue;
+                    resolver = MakeUnique<TMglGlslIoResolver>(*program, (EShLanguage)stage,
+                        attrib.explicitVertexInLocations,
+                        attrib.explicitFragmentOutLocations);
+                    break;
                 }
                 auto ioMapper = UniquePtr<glslang::TIoMapper>(glslang::GetGlslIoMapper());
 
@@ -213,9 +219,9 @@ namespace MobileGL {
                 spvc_compiler_options options;
                 session.CreateOptions(&options);
 
-                spvc_compiler_options_set_uint(options, SPVC_COMPILER_OPTION_GLSL_VERSION, 450);
-                spvc_compiler_options_set_bool(options, SPVC_COMPILER_OPTION_GLSL_ES, SPVC_FALSE);
-                spvc_compiler_options_set_bool(options, SPVC_COMPILER_OPTION_GLSL_VULKAN_SEMANTICS, SPVC_TRUE);
+                spvc_compiler_options_set_uint(options, SPVC_COMPILER_OPTION_GLSL_VERSION, 320);
+                spvc_compiler_options_set_bool(options, SPVC_COMPILER_OPTION_GLSL_ES, SPVC_TRUE);
+                spvc_compiler_options_set_bool(options, SPVC_COMPILER_OPTION_GLSL_VULKAN_SEMANTICS, SPVC_FALSE);
 
                 session.SetOptions(options);
 

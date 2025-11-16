@@ -21,6 +21,8 @@ namespace MobileGL {
 
             struct ProgramAttrib {
                 Vector<SharedPtr<glslang::TShader>> shaders;
+                UnorderedMap<String, Uint> explicitVertexInLocations;
+                UnorderedMap<String, Uint> explicitFragmentOutLocations;
             };
 
             struct ProgramBinaryAttrib {
