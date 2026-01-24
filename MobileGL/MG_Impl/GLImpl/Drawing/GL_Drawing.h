@@ -1,9 +1,29 @@
+// MobileGL - MobileGL/MG_Impl/GLImpl/Drawing/GL_Drawing.h
+// Copyright (c) 2025-2026 MobileGL-Dev
+// Licensed under the GNU Lesser General Public License v3.0:
+//   https://www.gnu.org/licenses/gpl-3.0.txt
+//   https://www.gnu.org/licenses/lgpl-3.0.txt
+// SPDX-License-Identifier: LGPL-3.0-only
+// End of Source File Header
+
 #pragma once
 #include <Includes.h>
 
 namespace MobileGL {
     namespace MG_Impl::GLImpl {
         /* @INSERTION_POINT:FUNCTION_DECLARATION@ */
+        void MultiDrawElementsIndirect(GLenum mode, GLenum type, const void* indirect, GLsizei drawcount, GLsizei stride);
+        void MultiDrawArraysIndirect(GLenum mode, const void* indirect, GLsizei drawcount, GLsizei stride);
+        void DrawRangeElementsBaseVertex(GLenum mode, GLuint start, GLuint end, GLsizei count, GLenum type, const void* indices, GLint basevertex);
+        void DrawRangeElements(GLenum mode, GLuint start, GLuint end, GLsizei count, GLenum type, const void* indices);
+        void DrawElementsInstancedBaseVertexBaseInstance(GLenum mode, GLsizei count, GLenum type, const void* indices, GLsizei instancecount, GLint basevertex, GLuint baseinstance);
+        void DrawElementsInstancedBaseVertex(GLenum mode, GLsizei count, GLenum type, const void* indices, GLsizei instancecount, GLint basevertex);
+        void DrawElementsInstancedBaseInstance(GLenum mode, GLsizei count, GLenum type, const void* indices, GLsizei instancecount, GLuint baseinstance);
+        void DrawElementsInstanced(GLenum mode, GLsizei count, GLenum type, const void* indices, GLsizei instancecount);
+        void DrawElementsIndirect(GLenum mode, GLenum type, const void* indirect);
+        void DrawArraysInstancedBaseInstance(GLenum mode, GLint first, GLsizei count, GLsizei instancecount, GLuint baseinstance);
+        void DrawArraysInstanced(GLenum mode, GLint first, GLsizei count, GLsizei instancecount);
+        void DrawArraysIndirect(GLenum mode, const void* indirect);
         void DrawElementsBaseVertex(GLenum mode, GLsizei count, GLenum type, const void* indices, GLint basevertex);
         void DrawArrays(GLenum mode, GLint first, GLsizei count);
         void MultiDrawElements(GLenum mode, const GLsizei* count, GLenum type, const void* const* indices,

@@ -1,5 +1,14 @@
+// MobileGL - MobileGL/MG_Test/Program/ProgramTest.cpp
+// Copyright (c) 2025-2026 MobileGL-Dev
+// Licensed under the GNU Lesser General Public License v3.0:
+//   https://www.gnu.org/licenses/gpl-3.0.txt
+//   https://www.gnu.org/licenses/lgpl-3.0.txt
+// SPDX-License-Identifier: LGPL-3.0-only
+// End of Source File Header
+
 #include <gtest/gtest.h>
 #include "Includes.h"
+#include "Init.h"
 #include "MG_Impl/GLImpl/Program/GL_Program.h"
 #include "MG_State/GLState/Core.h"
 #include "MG_Util/ShaderTranspiler/ShaderCompiler.h"
@@ -9,9 +18,9 @@ using namespace MobileGL::MG_Impl::GLImpl;
 
 class ProgramTest : public ::testing::Test {
 protected:
-    void SetUp() override { MG_State::pGLContext = new MG_State::GLState::GLContext(); }
+    void SetUp() override { MobileGL::MG_Initialize(); }
 
-    void TearDown() override { delete MG_State::pGLContext; }
+    void TearDown() override {}
 };
 
 TEST_F(ProgramTest, Sanity) {
@@ -1204,9 +1213,9 @@ TEST_F(ProgramTest, CompileShaderWithSamplerAsVarName) {
     spvc_compiler_options options;
     spvcSession.CreateOptions(&options);
 
-    spvc_compiler_options_set_uint(options, SPVC_COMPILER_OPTION_GLSL_VERSION, 460);
+    spvc_compiler_options_set_uint(options, SPVC_COMPILER_OPTION_GLSL_VERSION, 320);
     spvc_compiler_options_set_bool(options, SPVC_COMPILER_OPTION_GLSL_ES, SPVC_TRUE);
-    // spvc_compiler_options_set_bool(options, SPVC_COMPILER_OPTION_GLSL_VULKAN_SEMANTICS, SPVC_FALSE);
+    spvc_compiler_options_set_bool(options, SPVC_COMPILER_OPTION_GLSL_VULKAN_SEMANTICS, SPVC_FALSE);
 
     spvcSession.SetOptions(options);
 

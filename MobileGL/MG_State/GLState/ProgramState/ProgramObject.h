@@ -1,3 +1,11 @@
+// MobileGL - MobileGL/MG_State/GLState/ProgramState/ProgramObject.h
+// Copyright (c) 2025-2026 MobileGL-Dev
+// Licensed under the GNU Lesser General Public License v3.0:
+//   https://www.gnu.org/licenses/gpl-3.0.txt
+//   https://www.gnu.org/licenses/lgpl-3.0.txt
+// SPDX-License-Identifier: LGPL-3.0-only
+// End of Source File Header
+
 #pragma once
 #include <Includes.h>
 #include "ShaderObject.h"
@@ -14,7 +22,7 @@ namespace MobileGL {
                 bool AttachShader(SharedPtr<ShaderObject> shader);
                 SizeT DetachShader(SharedPtr<ShaderObject> shader);
                 SizeT RemoveShader(SharedPtr<ShaderObject> shader);
-                void Link();
+                void Link(Bool addDefaultFSIfMissingForRenderingPipelineProgram = false);
                 void MarkAsDeleted();
 
                 void SetExplicitVertexInLocation(Uint index, const char* name);
@@ -113,6 +121,7 @@ namespace MobileGL {
                 void DoReflection();
                 void GenerateBinary();
                 void WaitUntilGenerationCompleted();
+                void AddDefaultFragmentShaderIfMissing();
 
                 const Uint m_externalIndex = 0;
                 Vector<SharedPtr<ShaderObject>> m_shaders;

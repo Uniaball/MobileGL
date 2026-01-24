@@ -1,7 +1,16 @@
+// MobileGL - MobileGL/MG_Backend/DirectGLES/Managers.h
+// Copyright (c) 2025-2026 MobileGL-Dev
+// Licensed under the GNU Lesser General Public License v3.0:
+//   https://www.gnu.org/licenses/gpl-3.0.txt
+//   https://www.gnu.org/licenses/lgpl-3.0.txt
+// SPDX-License-Identifier: LGPL-3.0-only
+// End of Source File Header
+
 #pragma once
 #include <Includes.h>
 #include "DirectGLES.h"
 #include "MG_State/GLState/SamplerState/SamplerObject.h"
+#include "MG_State/GLState/TextureState/TextureEnum.h"
 #include <MG_State/GLState/TextureState/TextureObject.h>
 #include <MG_State/GLState/Core.h>
 
@@ -34,7 +43,7 @@ namespace MobileGL::MG_Backend::DirectGLES {
         class BackendVertexArrayObject {
         public:
             BackendVertexArrayObject();
-            void SyncToBackend(SharedPtr<MG_State::GLState::VertexArrayObject>& stateVAOObject);
+            void SyncToBackend(SharedPtr<MG_State::GLState::VertexArrayObject>& stateVAOObject, Bool needDivisor);
             Uint GetBackendVertexArrayId() { return m_backendVAOId; }
             void Bind();
 
@@ -48,16 +57,29 @@ namespace MobileGL::MG_Backend::DirectGLES {
     } // namespace VertexArrayImpl
 
     namespace TextureImpl {
+        inline Bool IsSupportedTextureTarget(TextureTarget target) {
+            if (target == TextureTarget::Texture1D ||
+                target == TextureTarget::TextureRectangle ||
+                target == TextureTarget::Texture2DMultisampleArray ||
+                target == TextureTarget::Texture1DArray ||
+                target == TextureTarget::Texture2DMultisample ||
+                target == TextureTarget::Texture2DArray)
+                return false;
+            return true;
+        }
+
         struct StateTextureBasicInfo { // Used for tracking texture state changes
             TextureInternalFormat internalFormat = TextureInternalFormat::Unknown;
             SizeT width = 0;
             SizeT height = 0;
             SizeT depth = 0;
             SizeT mipmapLevels = 0;
+            Uint bufferExternalIndex = 0;
 
             bool operator==(const StateTextureBasicInfo& other) const {
                 return internalFormat == other.internalFormat && width == other.width && height == other.height &&
-                       depth == other.depth && mipmapLevels == other.mipmapLevels;
+                       depth == other.depth && mipmapLevels == other.mipmapLevels &&
+                       bufferExternalIndex == other.bufferExternalIndex;
             }
 
             bool operator!=(const StateTextureBasicInfo& other) const { return !(*this == other); }
@@ -93,6 +115,7 @@ namespace MobileGL::MG_Backend::DirectGLES {
                                FramebufferTarget asTarget);
             Uint GetBackendFramebufferId() { return m_backendFBOId; }
             void Bind(FramebufferTarget target);
+            FramebufferAttachmentType GetCompactedAttachmentTypeAtDrawBufferIndex(Int index);
 
         private:
             Uint m_backendFBOId = 0;
@@ -163,4 +186,24 @@ namespace MobileGL::MG_Backend::DirectGLES {
         extern UnorderedMap<SharedPtr<MG_State::GLState::SamplerObject>, SharedPtr<BackendSamplerObject>>
             g_backendSamplerObjects;
     } // namespace SamplerImpl
+
+    namespace RenderbufferImpl {
+        class BackendRenderbufferObject {
+        public:
+            BackendRenderbufferObject();
+            void SyncToBackend(const SharedPtr<MG_State::GLState::RenderbufferObject>& stateRBOObject);
+            Uint GetBackendRenderbufferId() { return m_backendRBOId; }
+            void Bind();
+
+        private:
+            Uint m_backendRBOId = 0;
+            Bool m_isInitialized = false;
+            TextureInternalFormat m_cacheInternalFormat = TextureInternalFormat::Unknown;
+            Int m_cacheWidth = 0;
+            Int m_cacheHeight = 0;
+        };
+
+        extern UnorderedMap<SharedPtr<MG_State::GLState::RenderbufferObject>, SharedPtr<BackendRenderbufferObject>>
+            g_backendRenderbufferObjects;
+    } // namespace RenderbufferImpl
 } // namespace MobileGL::MG_Backend::DirectGLES

@@ -1,3 +1,11 @@
+// MobileGL - MobileGL/MG_Impl/GLImpl/Texture/Validators.cpp
+// Copyright (c) 2025-2026 MobileGL-Dev
+// Licensed under the GNU Lesser General Public License v3.0:
+//   https://www.gnu.org/licenses/gpl-3.0.txt
+//   https://www.gnu.org/licenses/lgpl-3.0.txt
+// SPDX-License-Identifier: LGPL-3.0-only
+// End of Source File Header
+
 #include "Validators.h"
 #include "MG_State/GLState/TextureState/TextureObject.h"
 #include "MG_Util/Types.h"
@@ -127,8 +135,8 @@ namespace MobileGL::MG_Impl::GLImpl {
             return true;
         }
 
-        Bool ValidateTextureSizeRange(SizeT width, SizeT height) {
-            if (width < 0 || height < 0) {
+        Bool ValidateTextureSizeRange(SizeT width, SizeT height, SizeT depth) {
+            if (width < 0 || height < 0 || depth < 0) {
                 MG_State::pGLContext->RecordError(
                     ErrorCode::InvalidValue,
                     MakeShared<GenericErrorInfo>("MG_Impl/GLImpl", "ValidateTextureSizeRange",
@@ -162,15 +170,15 @@ namespace MobileGL::MG_Impl::GLImpl {
             }
             return true;
         }
-        Bool ValidateTextureFormatWithType(TextureInputFormat format, TextureInternalFormat internalFormat,
-                                           TexturePixelDataType type) {
+        Bool ValidateTextureInternalFormatCompatibleWithInput(TextureInputFormat format, TextureInternalFormat internalFormat,
+                                                              TexturePixelDataType type) {
             if (type == TexturePixelDataType::UnsignedByte332 || type == TexturePixelDataType::UnsignedByte233Rev ||
                 type == TexturePixelDataType::UnsignedShort565 || type == TexturePixelDataType::UnsignedShort565Rev ||
                 type == TexturePixelDataType::UnsignedInt101111Rev) {
                 if (format != TextureInputFormat::RGB) {
                     MG_State::pGLContext->RecordError(
                         ErrorCode::InvalidOperation,
-                        MakeShared<GenericErrorInfo>("MG_Impl/GLImpl", "ValidateTextureFormatWithType",
+                        MakeShared<GenericErrorInfo>("MG_Impl/GLImpl", "ValidateTextureInternalFormatCompatibleWithInput",
                                                      "Invalid format for the given type"));
                     return false;
                 }
@@ -185,7 +193,7 @@ namespace MobileGL::MG_Impl::GLImpl {
                 if (format != TextureInputFormat::RGBA && format != TextureInputFormat::BGRA) {
                     MG_State::pGLContext->RecordError(
                         ErrorCode::InvalidOperation,
-                        MakeShared<GenericErrorInfo>("MG_Impl/GLImpl", "ValidateTextureFormatWithType",
+                        MakeShared<GenericErrorInfo>("MG_Impl/GLImpl", "ValidateTextureInternalFormatCompatibleWithInput",
                                                      "Invalid format for the given type"));
                     return false;
                 }
@@ -198,7 +206,7 @@ namespace MobileGL::MG_Impl::GLImpl {
                 if (format != TextureInputFormat::DepthComponent) {
                     MG_State::pGLContext->RecordError(
                         ErrorCode::InvalidOperation,
-                        MakeShared<GenericErrorInfo>("MG_Impl/GLImpl", "ValidateTextureFormatWithType",
+                        MakeShared<GenericErrorInfo>("MG_Impl/GLImpl", "ValidateTextureInternalFormatCompatibleWithInput",
                                                      "Invalid format for depth component internal format"));
                     return false;
                 }
@@ -213,7 +221,7 @@ namespace MobileGL::MG_Impl::GLImpl {
                  )) {
                 MG_State::pGLContext->RecordError(
                     ErrorCode::InvalidOperation,
-                    MakeShared<GenericErrorInfo>("MG_Impl/GLImpl", "ValidateTextureFormatWithType",
+                    MakeShared<GenericErrorInfo>("MG_Impl/GLImpl", "ValidateTextureInternalFormatCompatibleWithInput",
                                                  "Invalid internal format for depth component format"));
                 return false;
             }

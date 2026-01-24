@@ -1,3 +1,11 @@
+// MobileGL - MobileGL/MG_Util/BackendLoaders/OpenGL/Loader.h
+// Copyright (c) 2025-2026 MobileGL-Dev
+// Licensed under the GNU Lesser General Public License v3.0:
+//   https://www.gnu.org/licenses/gpl-3.0.txt
+//   https://www.gnu.org/licenses/lgpl-3.0.txt
+// SPDX-License-Identifier: LGPL-3.0-only
+// End of Source File Header
+
 #include <Includes.h>
 
 #define MOBILEGL_EXTERNAL_GLES
@@ -466,7 +474,7 @@ namespace MobileGL {
             typedef EGLSurface (*eglCreatePixmapSurface_PTR)(EGLDisplay dpy, EGLConfig config,
                                                              EGLNativePixmapType pixmap, const EGLint* attrib_list);
             typedef EGLSurface (*eglCreatePlatformWindowSurface_PTR)(EGLDisplay display, EGLConfig config,
-                                                                     void* native_window, const EGLint* attrib_list);
+                                                                     void* native_window, const EGLAttrib* attrib_list);
             typedef EGLSurface (*eglCreateWindowSurface_PTR)(EGLDisplay dpy, EGLConfig config, EGLNativeWindowType win,
                                                              const EGLint* attrib_list);
             typedef EGLBoolean (*eglDestroyContext_PTR)(EGLDisplay dpy, EGLContext ctx);
@@ -480,7 +488,7 @@ namespace MobileGL {
             typedef EGLSurface (*eglGetCurrentSurface_PTR)(EGLint readdraw);
             typedef EGLDisplay (*eglGetDisplay_PTR)(EGLNativeDisplayType display_id);
             typedef EGLDisplay (*eglGetPlatformDisplay_PTR)(EGLenum platform, void* native_display,
-                                                            const EGLint* attrib_list);
+                                                            const EGLAttrib* attrib_list);
             typedef EGLint (*eglGetError_PTR)();
             typedef __eglMustCastToProperFunctionPointerType (*eglGetProcAddress_PTR)(const char* procname);
             typedef EGLBoolean (*eglInitialize_PTR)(EGLDisplay dpy, EGLint* major, EGLint* minor);
@@ -503,6 +511,15 @@ namespace MobileGL {
             typedef EGLBoolean (*eglWaitClient_PTR)();
             typedef EGLBoolean (*eglWaitGL_PTR)();
             typedef EGLBoolean (*eglWaitNative_PTR)(EGLint engine);
+            typedef EGLSync (*eglCreateSync_PTR)(EGLDisplay dpy, EGLenum type, const EGLAttrib * attrib_list);
+            typedef EGLBoolean (*eglDestroySync_PTR)(EGLDisplay dpy, EGLSync sync);
+            typedef EGLint (*eglClientWaitSync_PTR)(EGLDisplay dpy, EGLSync sync, EGLint flags, EGLTime timeout);
+            typedef EGLBoolean (*eglGetSyncAttrib_PTR)(EGLDisplay dpy, EGLSync sync, EGLint attribute, EGLAttrib * value);
+            typedef EGLImage (*eglCreateImage_PTR)(EGLDisplay dpy, EGLContext ctx, EGLenum target, EGLClientBuffer buffer, const EGLAttrib * attrib_list);
+            typedef EGLBoolean (*eglDestroyImage_PTR)(EGLDisplay dpy, EGLImage image);
+            typedef EGLSurface (*eglCreatePlatformPixmapSurface_PTR)(EGLDisplay dpy, EGLConfig config, void * native_pixmap, const EGLAttrib * attrib_list);
+            typedef EGLBoolean (*eglWaitSync_PTR)(EGLDisplay dpy, EGLSync sync, EGLint flags);
+
 
             EGL_FUNC_DECL(eglBindAPI)
             EGL_FUNC_DECL(eglBindTexImage)
@@ -542,6 +559,14 @@ namespace MobileGL {
             EGL_FUNC_DECL(eglWaitClient)
             EGL_FUNC_DECL(eglWaitGL)
             EGL_FUNC_DECL(eglWaitNative)
+            EGL_FUNC_DECL(eglCreateSync)
+            EGL_FUNC_DECL(eglDestroySync)
+            EGL_FUNC_DECL(eglClientWaitSync)
+            EGL_FUNC_DECL(eglGetSyncAttrib)
+            EGL_FUNC_DECL(eglCreateImage)
+            EGL_FUNC_DECL(eglDestroyImage)
+            EGL_FUNC_DECL(eglCreatePlatformPixmapSurface)
+            EGL_FUNC_DECL(eglWaitSync)
 
         }; // namespace EGL
 
@@ -550,6 +575,7 @@ namespace MobileGL {
                 struct GLESCaps {
                     Version version;
                     Bool hasPersistentMapping;
+                    Bool hasNorm16Texture;
                 };
             } // namespace Caps
 
@@ -933,7 +959,7 @@ namespace MobileGL {
     namespace MG_Util {
         namespace BackendLoader {
             namespace GLES {
-                void Init();
+                Bool Init();
                 extern void *libGLES, *libEGL;
 
                 void* ProcAddress(void* lib, const char* name);

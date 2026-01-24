@@ -1,3 +1,11 @@
+// MobileGL - MobileGL/MG_State/GLState/TextureState/TextureObjectStubs.h
+// Copyright (c) 2025-2026 MobileGL-Dev
+// Licensed under the GNU Lesser General Public License v3.0:
+//   https://www.gnu.org/licenses/gpl-3.0.txt
+//   https://www.gnu.org/licenses/lgpl-3.0.txt
+// SPDX-License-Identifier: LGPL-3.0-only
+// End of Source File Header
+
 #pragma once
 #include "MG_State/GLState/TextureState/TextureEnum.h"
 #include "TextureObject.h"
@@ -31,8 +39,8 @@ namespace MobileGL {
             STUB_TEXTURE_OBJECT_CLASS_DEFINITION(TextureObject2DMultisample, TextureTarget::Texture2DMultisample,
                                                  {TextureUploadTarget::Texture2DMultisample});
 
-            STUB_TEXTURE_OBJECT_CLASS_DEFINITION(TextureObjectBuffer, TextureTarget::TextureBuffer,
-                                                 {TextureUploadTarget::Unknown});
+            // STUB_TEXTURE_OBJECT_CLASS_DEFINITION(TextureObjectBuffer, TextureTarget::TextureBuffer,
+            //                                      {TextureUploadTarget::Unknown});
 
             STUB_TEXTURE_OBJECT_CLASS_DEFINITION(TextureObject1DArray, TextureTarget::Texture1DArray,
                                                  {TextureUploadTarget::Texture1DArray});

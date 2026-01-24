@@ -1,4 +1,13 @@
+// MobileGL - MobileGL/MG_Impl/GLImpl/Program/GL_Program.cpp
+// Copyright (c) 2025-2026 MobileGL-Dev
+// Licensed under the GNU Lesser General Public License v3.0:
+//   https://www.gnu.org/licenses/gpl-3.0.txt
+//   https://www.gnu.org/licenses/lgpl-3.0.txt
+// SPDX-License-Identifier: LGPL-3.0-only
+// End of Source File Header
+
 #include "GL_Program.h"
+#include "Config.h"
 #include "MG_Util/Converters/GLToStr/GLEnumConverter.h"
 #include <MG_State/GLState/Core.h>
 #include <MG_Util/Converters/GLToMG/ProgramEnumConverter.h>
@@ -468,7 +477,7 @@ namespace MobileGL {
             auto programObject = TryToGetProgramObject(program);
             if (!programObject) return;
             MGLOG_D("%s: linking program %d", __func__, program);
-            programObject->Link();
+            programObject->Link(!MG_Config::RendererInfoPtr->BackendCapability.AllowVSOnlyPrograms);
         }
 
         void ShaderSource_State(GLuint shader, GLsizei count, const GLchar* const* string, const GLint* length) {

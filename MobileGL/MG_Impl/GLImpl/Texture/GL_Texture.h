@@ -1,3 +1,11 @@
+// MobileGL - MobileGL/MG_Impl/GLImpl/Texture/GL_Texture.h
+// Copyright (c) 2025-2026 MobileGL-Dev
+// Licensed under the GNU Lesser General Public License v3.0:
+//   https://www.gnu.org/licenses/gpl-3.0.txt
+//   https://www.gnu.org/licenses/lgpl-3.0.txt
+// SPDX-License-Identifier: LGPL-3.0-only
+// End of Source File Header
+
 #pragma once
 #include <Includes.h>
 
@@ -12,6 +20,11 @@ namespace MobileGL {
                            const GLvoid* pixels);
         void TexParameterf(GLenum target, GLenum pname, GLfloat param);
         void TexParameteri(GLenum target, GLenum pname, GLint param);
+        void TexParameterfv(GLenum target, GLenum pname, const GLfloat * params);
+        void TexParameteriv(GLenum target, GLenum pname, const GLint * params);
+        void TexParameterIiv(GLenum target, GLenum pname, const GLint * params);
+        void TexParameterIuiv(GLenum target, GLenum pname, const GLuint * params);
+
         void TexImage3DMultisample(GLenum target, GLsizei samples, GLenum internalformat, GLsizei width, GLsizei height,
                                    GLsizei depth, GLboolean fixedsamplelocations);
         void TexImage2DMultisample(GLenum target, GLsizei samples, GLenum internalformat, GLsizei width, GLsizei height,

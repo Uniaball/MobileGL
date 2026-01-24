@@ -1,3 +1,11 @@
+// MobileGL - MobileGL/MG_Impl/GLImpl/Exporting/Definitions.cpp
+// Copyright (c) 2025-2026 MobileGL-Dev
+// Licensed under the GNU Lesser General Public License v3.0:
+//   https://www.gnu.org/licenses/gpl-3.0.txt
+//   https://www.gnu.org/licenses/lgpl-3.0.txt
+// SPDX-License-Identifier: LGPL-3.0-only
+// End of Source File Header
+
 #include <Includes.h>
 #include "../Buffer/GL_Buffer.h"
 #include "../Getter/GL_Getter.h"
@@ -24,15 +32,29 @@ MOBILEGL_GL_API type gl##name(__VA_ARGS__) {
 #define DECLARE_GL_FUNCTION_HEAD(type,name,...)                             \
 MOBILEGL_GL_API type gl##name(__VA_ARGS__) {
 
-#define DECLARE_GL_FUNCTION_END(type,name,...)                              \
-    MGLOG_D("Implementing function: %s(...)", __FUNCTION__);                \
-    return MobileGL::MG_Impl::GLImpl::name(__VA_ARGS__);                    \
-}
+#ifdef TRACY_ENABLE
+    #define DECLARE_GL_FUNCTION_END(type,name,...)                              \
+        ZoneScopedC(TRACY_ZONECOLOR_ENTRY);                                     \
+        MGLOG_D("Implementing function: %s(...)", __FUNCTION__);                \
+        return MobileGL::MG_Impl::GLImpl::name(__VA_ARGS__);                    \
+    }
 
-#define DECLARE_GL_FUNCTION_END_NO_RETURN(type,name,...)                    \
-    MGLOG_D("Implementing function: %s(...)", __FUNCTION__);                \
-    MobileGL::MG_Impl::GLImpl::name(__VA_ARGS__);                           \
-}
+    #define DECLARE_GL_FUNCTION_END_NO_RETURN(type,name,...)                    \
+        ZoneScopedC(TRACY_ZONECOLOR_ENTRY);                                     \
+        MGLOG_D("Implementing function: %s(...)", __FUNCTION__);                \
+        MobileGL::MG_Impl::GLImpl::name(__VA_ARGS__);                           \
+    }
+#else
+    #define DECLARE_GL_FUNCTION_END(type,name,...)                              \
+        MGLOG_D("Implementing function: %s(...)", __FUNCTION__);                \
+        return MobileGL::MG_Impl::GLImpl::name(__VA_ARGS__);                    \
+    }
+
+    #define DECLARE_GL_FUNCTION_END_NO_RETURN(type,name,...)                    \
+        MGLOG_D("Implementing function: %s(...)", __FUNCTION__);                \
+        MobileGL::MG_Impl::GLImpl::name(__VA_ARGS__);                           \
+    }
+#endif
 
 DECLARE_GL_FUNCTION_HEAD(const GLubyte*, GetStringi, GLenum name, GLuint index) DECLARE_GL_FUNCTION_END(const GLubyte*, GetStringi, name, index)
 DECLARE_GL_FUNCTION_HEAD(const GLubyte*, GetString, GLenum name) DECLARE_GL_FUNCTION_END(const GLubyte*, GetString, name)
@@ -104,7 +126,7 @@ DECLARE_GL_FUNCTION_HEAD(void, GetFramebufferAttachmentParameteriv, GLenum targe
 DECLARE_GL_FUNCTION_HEAD(void, GetIntegerv, GLenum pname, GLint* data) DECLARE_GL_FUNCTION_END_NO_RETURN(void, GetIntegerv, pname, data)
 DECLARE_GL_FUNCTION_HEAD(void, GetProgramiv, GLuint program, GLenum pname, GLint* params) DECLARE_GL_FUNCTION_END_NO_RETURN(void, GetProgramiv, program, pname, params)
 DECLARE_GL_FUNCTION_HEAD(void, GetProgramInfoLog, GLuint program, GLsizei bufSize, GLsizei* length, GLchar* infoLog) DECLARE_GL_FUNCTION_END_NO_RETURN(void, GetProgramInfoLog, program, bufSize, length, infoLog)
-DECLARE_GL_FUNCTION_STUB_HEAD(void, GetRenderbufferParameteriv, GLenum target, GLenum pname, GLint* params) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, GetRenderbufferParameteriv, target, pname, params)
+DECLARE_GL_FUNCTION_HEAD(void, GetRenderbufferParameteriv, GLenum target, GLenum pname, GLint* params) DECLARE_GL_FUNCTION_END_NO_RETURN(void, GetRenderbufferParameteriv, target, pname, params)
 DECLARE_GL_FUNCTION_HEAD(void, GetShaderiv, GLuint shader, GLenum pname, GLint* params) DECLARE_GL_FUNCTION_END_NO_RETURN(void, GetShaderiv, shader, pname, params)
 DECLARE_GL_FUNCTION_HEAD(void, GetShaderInfoLog, GLuint shader, GLsizei bufSize, GLsizei* length, GLchar* infoLog) DECLARE_GL_FUNCTION_END_NO_RETURN(void, GetShaderInfoLog, shader, bufSize, length, infoLog)
 DECLARE_GL_FUNCTION_STUB_HEAD(void, GetShaderPrecisionFormat, GLenum shadertype, GLenum precisiontype, GLint* range, GLint* precision) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, GetShaderPrecisionFormat, shadertype, precisiontype, range, precision)
@@ -144,9 +166,9 @@ DECLARE_GL_FUNCTION_HEAD(void, StencilOp, GLenum fail, GLenum zfail, GLenum zpas
 DECLARE_GL_FUNCTION_HEAD(void, StencilOpSeparate, GLenum face, GLenum sfail, GLenum dpfail, GLenum dppass) DECLARE_GL_FUNCTION_END_NO_RETURN(void, StencilOpSeparate, face, sfail, dpfail, dppass)
 DECLARE_GL_FUNCTION_HEAD(void, TexImage2D, GLenum target, GLint level, GLint internalformat, GLsizei width, GLsizei height, GLint border, GLenum format, GLenum type, const void* pixels) DECLARE_GL_FUNCTION_END_NO_RETURN(void, TexImage2D, target, level, internalformat, width, height, border, format, type, pixels)
 DECLARE_GL_FUNCTION_HEAD(void, TexParameterf, GLenum target, GLenum pname, GLfloat param) DECLARE_GL_FUNCTION_END_NO_RETURN(void, TexParameterf, target, pname, param)
-DECLARE_GL_FUNCTION_STUB_HEAD(void, TexParameterfv, GLenum target, GLenum pname, const GLfloat* params) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, TexParameterfv, target, pname, params)
+DECLARE_GL_FUNCTION_HEAD(void, TexParameterfv, GLenum target, GLenum pname, const GLfloat* params) DECLARE_GL_FUNCTION_END_NO_RETURN(void, TexParameterfv, target, pname, params)
 DECLARE_GL_FUNCTION_HEAD(void, TexParameteri, GLenum target, GLenum pname, GLint param) DECLARE_GL_FUNCTION_END_NO_RETURN(void, TexParameteri, target, pname, param)
-DECLARE_GL_FUNCTION_STUB_HEAD(void, TexParameteriv, GLenum target, GLenum pname, const GLint* params) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, TexParameteriv, target, pname, params)
+DECLARE_GL_FUNCTION_HEAD(void, TexParameteriv, GLenum target, GLenum pname, const GLint* params) DECLARE_GL_FUNCTION_END_NO_RETURN(void, TexParameteriv, target, pname, params)
 DECLARE_GL_FUNCTION_HEAD(void, TexSubImage2D, GLenum target, GLint level, GLint xoffset, GLint yoffset, GLsizei width, GLsizei height, GLenum format, GLenum type, const void* pixels) DECLARE_GL_FUNCTION_END_NO_RETURN(void, TexSubImage2D, target, level, xoffset, yoffset, width, height, format, type, pixels)
 DECLARE_GL_FUNCTION_HEAD(void, Uniform1f, GLint location, GLfloat v0) DECLARE_GL_FUNCTION_END_NO_RETURN(void, Uniform1f, location, v0)
 DECLARE_GL_FUNCTION_HEAD(void, Uniform1fv, GLint location, GLsizei count, const GLfloat* value) DECLARE_GL_FUNCTION_END_NO_RETURN(void, Uniform1fv, location, count, value)
@@ -180,7 +202,7 @@ DECLARE_GL_FUNCTION_STUB_HEAD(void, VertexAttrib4fv, GLuint index, const GLfloat
 DECLARE_GL_FUNCTION_HEAD(void, VertexAttribPointer, GLuint index, GLint size, GLenum type, GLboolean normalized, GLsizei stride, const void* pointer) DECLARE_GL_FUNCTION_END_NO_RETURN(void, VertexAttribPointer, index, size, type, normalized, stride, pointer)
 DECLARE_GL_FUNCTION_HEAD(void, Viewport, GLint x, GLint y, GLsizei width, GLsizei height) DECLARE_GL_FUNCTION_END_NO_RETURN(void, Viewport, x, y, width, height)
 DECLARE_GL_FUNCTION_HEAD(void, ReadBuffer, GLenum src) DECLARE_GL_FUNCTION_END_NO_RETURN(void, ReadBuffer, src)
-DECLARE_GL_FUNCTION_STUB_HEAD(void, DrawRangeElements, GLenum mode, GLuint start, GLuint end, GLsizei count, GLenum type, const void* indices) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, DrawRangeElements, mode, start, end, count, type, indices)
+DECLARE_GL_FUNCTION_HEAD(void, DrawRangeElements, GLenum mode, GLuint start, GLuint end, GLsizei count, GLenum type, const void* indices) DECLARE_GL_FUNCTION_END_NO_RETURN(void, DrawRangeElements, mode, start, end, count, type, indices)
 DECLARE_GL_FUNCTION_HEAD(void, TexImage3D, GLenum target, GLint level, GLint internalformat, GLsizei width, GLsizei height, GLsizei depth, GLint border, GLenum format, GLenum type, const void* pixels) DECLARE_GL_FUNCTION_END_NO_RETURN(void, TexImage3D, target, level, internalformat, width, height, depth, border, format, type, pixels)
 DECLARE_GL_FUNCTION_HEAD(void, TexSubImage3D, GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type, const void* pixels) DECLARE_GL_FUNCTION_END_NO_RETURN(void, TexSubImage3D, target, level, xoffset, yoffset, zoffset, width, height, depth, format, type, pixels)
 DECLARE_GL_FUNCTION_HEAD(void, CopyTexSubImage3D, GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLint x, GLint y, GLsizei width, GLsizei height) DECLARE_GL_FUNCTION_END_NO_RETURN(void, CopyTexSubImage3D, target, level, xoffset, yoffset, zoffset, x, y, width, height)
@@ -235,10 +257,10 @@ DECLARE_GL_FUNCTION_STUB_HEAD(void, Uniform1uiv, GLint location, GLsizei count, 
 DECLARE_GL_FUNCTION_STUB_HEAD(void, Uniform2uiv, GLint location, GLsizei count, const GLuint* value) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, Uniform2uiv, location, count, value)
 DECLARE_GL_FUNCTION_STUB_HEAD(void, Uniform3uiv, GLint location, GLsizei count, const GLuint* value) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, Uniform3uiv, location, count, value)
 DECLARE_GL_FUNCTION_STUB_HEAD(void, Uniform4uiv, GLint location, GLsizei count, const GLuint* value) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, Uniform4uiv, location, count, value)
-DECLARE_GL_FUNCTION_STUB_HEAD(void, ClearBufferiv, GLenum buffer, GLint drawbuffer, const GLint* value) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, ClearBufferiv, buffer, drawbuffer, value)
-DECLARE_GL_FUNCTION_STUB_HEAD(void, ClearBufferuiv, GLenum buffer, GLint drawbuffer, const GLuint* value) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, ClearBufferuiv, buffer, drawbuffer, value)
-DECLARE_GL_FUNCTION_STUB_HEAD(void, ClearBufferfv, GLenum buffer, GLint drawbuffer, const GLfloat* value) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, ClearBufferfv, buffer, drawbuffer, value)
-DECLARE_GL_FUNCTION_STUB_HEAD(void, ClearBufferfi, GLenum buffer, GLint drawbuffer, GLfloat depth, GLint stencil) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, ClearBufferfi, buffer, drawbuffer, depth, stencil)
+DECLARE_GL_FUNCTION_HEAD(void, ClearBufferiv, GLenum buffer, GLint drawbuffer, const GLint* value) DECLARE_GL_FUNCTION_END_NO_RETURN(void, ClearBufferiv, buffer, drawbuffer, value)
+DECLARE_GL_FUNCTION_HEAD(void, ClearBufferuiv, GLenum buffer, GLint drawbuffer, const GLuint* value) DECLARE_GL_FUNCTION_END_NO_RETURN(void, ClearBufferuiv, buffer, drawbuffer, value)
+DECLARE_GL_FUNCTION_HEAD(void, ClearBufferfv, GLenum buffer, GLint drawbuffer, const GLfloat* value) DECLARE_GL_FUNCTION_END_NO_RETURN(void, ClearBufferfv, buffer, drawbuffer, value)
+DECLARE_GL_FUNCTION_HEAD(void, ClearBufferfi, GLenum buffer, GLint drawbuffer, GLfloat depth, GLint stencil) DECLARE_GL_FUNCTION_END_NO_RETURN(void, ClearBufferfi, buffer, drawbuffer, depth, stencil)
 DECLARE_GL_FUNCTION_HEAD(void, CopyBufferSubData, GLenum readTarget, GLenum writeTarget, GLintptr readOffset, GLintptr writeOffset, GLsizeiptr size) DECLARE_GL_FUNCTION_END_NO_RETURN(void, CopyBufferSubData, readTarget, writeTarget, readOffset, writeOffset, size)
 DECLARE_GL_FUNCTION_STUB_HEAD(void, GetUniformIndices, GLuint program, GLsizei uniformCount, const GLchar* const* uniformNames, GLuint* uniformIndices) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, GetUniformIndices, program, uniformCount, uniformNames, uniformIndices)
 DECLARE_GL_FUNCTION_STUB_HEAD(void, GetActiveUniformsiv, GLuint program, GLsizei uniformCount, const GLuint* uniformIndices, GLenum pname, GLint* params) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, GetActiveUniformsiv, program, uniformCount, uniformIndices, pname, params)
@@ -246,8 +268,8 @@ DECLARE_GL_FUNCTION_HEAD(GLuint, GetUniformBlockIndex, GLuint program, const GLc
 DECLARE_GL_FUNCTION_HEAD(void, GetActiveUniformBlockiv, GLuint program, GLuint uniformBlockIndex, GLenum pname, GLint* params) DECLARE_GL_FUNCTION_END_NO_RETURN(void, GetActiveUniformBlockiv, program, uniformBlockIndex, pname, params)
 DECLARE_GL_FUNCTION_HEAD(void, GetActiveUniformBlockName, GLuint program, GLuint uniformBlockIndex, GLsizei bufSize, GLsizei* length, GLchar* uniformBlockName) DECLARE_GL_FUNCTION_END_NO_RETURN(void, GetActiveUniformBlockName, program, uniformBlockIndex, bufSize, length, uniformBlockName)
 DECLARE_GL_FUNCTION_HEAD(void, UniformBlockBinding, GLuint program, GLuint uniformBlockIndex, GLuint uniformBlockBinding) DECLARE_GL_FUNCTION_END_NO_RETURN(void, UniformBlockBinding, program, uniformBlockIndex, uniformBlockBinding)
-DECLARE_GL_FUNCTION_STUB_HEAD(void, DrawArraysInstanced, GLenum mode, GLint first, GLsizei count, GLsizei instancecount) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, DrawArraysInstanced, mode, first, count, instancecount)
-DECLARE_GL_FUNCTION_STUB_HEAD(void, DrawElementsInstanced, GLenum mode, GLsizei count, GLenum type, const void* indices, GLsizei instancecount) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, DrawElementsInstanced, mode, count, type, indices, instancecount)
+DECLARE_GL_FUNCTION_HEAD(void, DrawArraysInstanced, GLenum mode, GLint first, GLsizei count, GLsizei instancecount) DECLARE_GL_FUNCTION_END_NO_RETURN(void, DrawArraysInstanced, mode, first, count, instancecount)
+DECLARE_GL_FUNCTION_HEAD(void, DrawElementsInstanced, GLenum mode, GLsizei count, GLenum type, const void* indices, GLsizei instancecount) DECLARE_GL_FUNCTION_END_NO_RETURN(void, DrawElementsInstanced, mode, count, type, indices, instancecount)
 DECLARE_GL_FUNCTION_STUB_HEAD(GLsync, FenceSync, GLenum condition, GLbitfield flags) DECLARE_GL_FUNCTION_STUB_END(GLsync, FenceSync, condition, flags)
 DECLARE_GL_FUNCTION_STUB_HEAD(GLboolean, IsSync, GLsync sync) DECLARE_GL_FUNCTION_STUB_END(GLboolean, IsSync, sync)
 DECLARE_GL_FUNCTION_STUB_HEAD(void, DeleteSync, GLsync sync) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, DeleteSync, sync)
@@ -267,7 +289,7 @@ DECLARE_GL_FUNCTION_HEAD(void, SamplerParameterf, GLuint sampler, GLenum pname, 
 DECLARE_GL_FUNCTION_HEAD(void, SamplerParameterfv, GLuint sampler, GLenum pname, const GLfloat* param) DECLARE_GL_FUNCTION_END_NO_RETURN(void, SamplerParameterfv, sampler, pname, param)
 DECLARE_GL_FUNCTION_HEAD(void, GetSamplerParameteriv, GLuint sampler, GLenum pname, GLint* params) DECLARE_GL_FUNCTION_END_NO_RETURN(void, GetSamplerParameteriv, sampler, pname, params)
 DECLARE_GL_FUNCTION_HEAD(void, GetSamplerParameterfv, GLuint sampler, GLenum pname, GLfloat* params) DECLARE_GL_FUNCTION_END_NO_RETURN(void, GetSamplerParameterfv, sampler, pname, params)
-DECLARE_GL_FUNCTION_STUB_HEAD(void, VertexAttribDivisor, GLuint index, GLuint divisor) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, VertexAttribDivisor, index, divisor)
+DECLARE_GL_FUNCTION_HEAD(void, VertexAttribDivisor, GLuint index, GLuint divisor) DECLARE_GL_FUNCTION_END_NO_RETURN(void, VertexAttribDivisor, index, divisor)
 DECLARE_GL_FUNCTION_STUB_HEAD(void, BindTransformFeedback, GLenum target, GLuint id) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, BindTransformFeedback, target, id)
 DECLARE_GL_FUNCTION_STUB_HEAD(void, DeleteTransformFeedbacks, GLsizei n, const GLuint* ids) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, DeleteTransformFeedbacks, n, ids)
 DECLARE_GL_FUNCTION_STUB_HEAD(void, GenTransformFeedbacks, GLsizei n, GLuint* ids) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, GenTransformFeedbacks, n, ids)
@@ -284,8 +306,8 @@ DECLARE_GL_FUNCTION_STUB_HEAD(void, TexStorage3D, GLenum target, GLsizei levels,
 DECLARE_GL_FUNCTION_STUB_HEAD(void, GetInternalformativ, GLenum target, GLenum internalformat, GLenum pname, GLsizei bufSize, GLint* params) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, GetInternalformativ, target, internalformat, pname, bufSize, params)
 DECLARE_GL_FUNCTION_STUB_HEAD(void, DispatchCompute, GLuint num_groups_x, GLuint num_groups_y, GLuint num_groups_z) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, DispatchCompute, num_groups_x, num_groups_y, num_groups_z)
 DECLARE_GL_FUNCTION_STUB_HEAD(void, DispatchComputeIndirect, GLintptr indirect) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, DispatchComputeIndirect, indirect)
-DECLARE_GL_FUNCTION_STUB_HEAD(void, DrawArraysIndirect, GLenum mode, const void* indirect) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, DrawArraysIndirect, mode, indirect)
-DECLARE_GL_FUNCTION_STUB_HEAD(void, DrawElementsIndirect, GLenum mode, GLenum type, const void* indirect) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, DrawElementsIndirect, mode, type, indirect)
+DECLARE_GL_FUNCTION_HEAD(void, DrawArraysIndirect, GLenum mode, const void* indirect) DECLARE_GL_FUNCTION_END_NO_RETURN(void, DrawArraysIndirect, mode, indirect)
+DECLARE_GL_FUNCTION_HEAD(void, DrawElementsIndirect, GLenum mode, GLenum type, const void* indirect) DECLARE_GL_FUNCTION_END_NO_RETURN(void, DrawElementsIndirect, mode, type, indirect)
 DECLARE_GL_FUNCTION_STUB_HEAD(void, FramebufferParameteri, GLenum target, GLenum pname, GLint param) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, FramebufferParameteri, target, pname, param)
 DECLARE_GL_FUNCTION_STUB_HEAD(void, GetFramebufferParameteriv, GLenum target, GLenum pname, GLint* params) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, GetFramebufferParameteriv, target, pname, params)
 DECLARE_GL_FUNCTION_STUB_HEAD(void, GetProgramInterfaceiv, GLuint program, GLenum programInterface, GLenum pname, GLint* params) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, GetProgramInterfaceiv, program, programInterface, pname, params)
@@ -376,8 +398,8 @@ DECLARE_GL_FUNCTION_STUB_HEAD(void, BlendFuncSeparateiARB, GLuint buf, GLenum sr
 DECLARE_GL_FUNCTION_STUB_HEAD(void, ColorMaski, GLuint index, GLboolean r, GLboolean g, GLboolean b, GLboolean a) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, ColorMaski, index, r, g, b, a)
 DECLARE_GL_FUNCTION_HEAD(GLboolean, IsEnabledi, GLenum target, GLuint index) DECLARE_GL_FUNCTION_END(GLboolean, IsEnabledi, target, index)
 DECLARE_GL_FUNCTION_HEAD(void, DrawElementsBaseVertex, GLenum mode, GLsizei count, GLenum type, const void* indices, GLint basevertex) DECLARE_GL_FUNCTION_END_NO_RETURN(void, DrawElementsBaseVertex, mode, count, type, indices, basevertex)
-DECLARE_GL_FUNCTION_STUB_HEAD(void, DrawRangeElementsBaseVertex, GLenum mode, GLuint start, GLuint end, GLsizei count, GLenum type, const void* indices, GLint basevertex) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, DrawRangeElementsBaseVertex, mode, start, end, count, type, indices, basevertex)
-DECLARE_GL_FUNCTION_STUB_HEAD(void, DrawElementsInstancedBaseVertex, GLenum mode, GLsizei count, GLenum type, const void* indices, GLsizei instancecount, GLint basevertex) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, DrawElementsInstancedBaseVertex, mode, count, type, indices, instancecount, basevertex)
+DECLARE_GL_FUNCTION_HEAD(void, DrawRangeElementsBaseVertex, GLenum mode, GLuint start, GLuint end, GLsizei count, GLenum type, const void* indices, GLint basevertex) DECLARE_GL_FUNCTION_END_NO_RETURN(void, DrawRangeElementsBaseVertex, mode, start, end, count, type, indices, basevertex)
+DECLARE_GL_FUNCTION_HEAD(void, DrawElementsInstancedBaseVertex, GLenum mode, GLsizei count, GLenum type, const void* indices, GLsizei instancecount, GLint basevertex) DECLARE_GL_FUNCTION_END_NO_RETURN(void, DrawElementsInstancedBaseVertex, mode, count, type, indices, instancecount, basevertex)
 DECLARE_GL_FUNCTION_HEAD(void, FramebufferTexture, GLenum target, GLenum attachment, GLuint texture, GLint level) DECLARE_GL_FUNCTION_END_NO_RETURN(void, FramebufferTexture, target, attachment, texture, level)
 DECLARE_GL_FUNCTION_STUB_HEAD(void, PrimitiveBoundingBox, GLfloat minX, GLfloat minY, GLfloat minZ, GLfloat minW, GLfloat maxX, GLfloat maxY, GLfloat maxZ, GLfloat maxW) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, PrimitiveBoundingBox, minX, minY, minZ, minW, maxX, maxY, maxZ, maxW)
 DECLARE_GL_FUNCTION_STUB_HEAD(GLenum, GetGraphicsResetStatus) DECLARE_GL_FUNCTION_STUB_END(GLenum, GetGraphicsResetStatus)
@@ -387,8 +409,8 @@ DECLARE_GL_FUNCTION_STUB_HEAD(void, GetnUniformiv, GLuint program, GLint locatio
 DECLARE_GL_FUNCTION_STUB_HEAD(void, GetnUniformuiv, GLuint program, GLint location, GLsizei bufSize, GLuint* params) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, GetnUniformuiv, program, location, bufSize, params)
 DECLARE_GL_FUNCTION_STUB_HEAD(void, MinSampleShading, GLfloat value) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, MinSampleShading, value)
 DECLARE_GL_FUNCTION_STUB_HEAD(void, PatchParameteri, GLenum pname, GLint value) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, PatchParameteri, pname, value)
-DECLARE_GL_FUNCTION_STUB_HEAD(void, TexParameterIiv, GLenum target, GLenum pname, const GLint* params) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, TexParameterIiv, target, pname, params)
-DECLARE_GL_FUNCTION_STUB_HEAD(void, TexParameterIuiv, GLenum target, GLenum pname, const GLuint* params) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, TexParameterIuiv, target, pname, params)
+DECLARE_GL_FUNCTION_HEAD(void, TexParameterIiv, GLenum target, GLenum pname, const GLint* params) DECLARE_GL_FUNCTION_END_NO_RETURN(void, TexParameterIiv, target, pname, params)
+DECLARE_GL_FUNCTION_HEAD(void, TexParameterIuiv, GLenum target, GLenum pname, const GLuint* params) DECLARE_GL_FUNCTION_END_NO_RETURN(void, TexParameterIuiv, target, pname, params)
 DECLARE_GL_FUNCTION_HEAD(void, GetTexParameterIiv, GLenum target, GLenum pname, GLint* params) DECLARE_GL_FUNCTION_END_NO_RETURN(void, GetTexParameterIiv, target, pname, params)
 DECLARE_GL_FUNCTION_HEAD(void, GetTexParameterIuiv, GLenum target, GLenum pname, GLuint* params) DECLARE_GL_FUNCTION_END_NO_RETURN(void, GetTexParameterIuiv, target, pname, params)
 DECLARE_GL_FUNCTION_HEAD(void, SamplerParameterIiv, GLuint sampler, GLenum pname, const GLint* param) DECLARE_GL_FUNCTION_END_NO_RETURN(void, SamplerParameterIiv, sampler, pname, param)
@@ -412,7 +434,7 @@ DECLARE_GL_FUNCTION_STUB_HEAD(void, EdgeFlag, GLboolean flag) DECLARE_GL_FUNCTIO
 DECLARE_GL_FUNCTION_STUB_HEAD(void, EdgeFlagv, const GLboolean* flag) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, EdgeFlagv, flag)
 DECLARE_GL_FUNCTION_STUB_HEAD(void, ClipPlane, GLenum plane, const GLdouble* equation) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, ClipPlane, plane, equation)
 DECLARE_GL_FUNCTION_STUB_HEAD(void, GetClipPlane, GLenum plane, GLdouble* equation) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, GetClipPlane, plane, equation)
-DECLARE_GL_FUNCTION_STUB_HEAD(void, DrawBuffer, GLenum mode) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, DrawBuffer, mode)
+DECLARE_GL_FUNCTION_HEAD(void, DrawBuffer, GLenum mode) DECLARE_GL_FUNCTION_END_NO_RETURN(void, DrawBuffer, mode)
 DECLARE_GL_FUNCTION_STUB_HEAD(void, EnableClientState, GLenum cap) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, EnableClientState, cap)
 DECLARE_GL_FUNCTION_STUB_HEAD(void, DisableClientState, GLenum cap) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, DisableClientState, cap)
 DECLARE_GL_FUNCTION_STUB_HEAD(void, GetDoublev, GLenum pname, GLdouble* params) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, GetDoublev, pname, params)
@@ -940,9 +962,9 @@ DECLARE_GL_FUNCTION_STUB_HEAD(void, DepthRangeArrayv, GLuint first, GLsizei coun
 DECLARE_GL_FUNCTION_STUB_HEAD(void, DepthRangeIndexed, GLuint index, GLdouble n, GLdouble f) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, DepthRangeIndexed, index, n, f)
 DECLARE_GL_FUNCTION_STUB_HEAD(void, GetFloati_v, GLenum target, GLuint index, GLfloat* data) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, GetFloati_v, target, index, data)
 DECLARE_GL_FUNCTION_STUB_HEAD(void, GetDoublei_v, GLenum target, GLuint index, GLdouble* data) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, GetDoublei_v, target, index, data)
-DECLARE_GL_FUNCTION_STUB_HEAD(void, DrawArraysInstancedBaseInstance, GLenum mode, GLint first, GLsizei count, GLsizei instancecount, GLuint baseinstance) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, DrawArraysInstancedBaseInstance, mode, first, count, instancecount, baseinstance)
-DECLARE_GL_FUNCTION_STUB_HEAD(void, DrawElementsInstancedBaseInstance, GLenum mode, GLsizei count, GLenum type, const void* indices, GLsizei instancecount, GLuint baseinstance) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, DrawElementsInstancedBaseInstance, mode, count, type, indices, instancecount, baseinstance)
-DECLARE_GL_FUNCTION_STUB_HEAD(void, DrawElementsInstancedBaseVertexBaseInstance, GLenum mode, GLsizei count, GLenum type, const void* indices, GLsizei instancecount, GLint basevertex, GLuint baseinstance) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, DrawElementsInstancedBaseVertexBaseInstance, mode, count, type, indices, instancecount, basevertex, baseinstance)
+DECLARE_GL_FUNCTION_HEAD(void, DrawArraysInstancedBaseInstance, GLenum mode, GLint first, GLsizei count, GLsizei instancecount, GLuint baseinstance) DECLARE_GL_FUNCTION_END_NO_RETURN(void, DrawArraysInstancedBaseInstance, mode, first, count, instancecount, baseinstance)
+DECLARE_GL_FUNCTION_HEAD(void, DrawElementsInstancedBaseInstance, GLenum mode, GLsizei count, GLenum type, const void* indices, GLsizei instancecount, GLuint baseinstance) DECLARE_GL_FUNCTION_END_NO_RETURN(void, DrawElementsInstancedBaseInstance, mode, count, type, indices, instancecount, baseinstance)
+DECLARE_GL_FUNCTION_HEAD(void, DrawElementsInstancedBaseVertexBaseInstance, GLenum mode, GLsizei count, GLenum type, const void* indices, GLsizei instancecount, GLint basevertex, GLuint baseinstance) DECLARE_GL_FUNCTION_END_NO_RETURN(void, DrawElementsInstancedBaseVertexBaseInstance, mode, count, type, indices, instancecount, basevertex, baseinstance)
 DECLARE_GL_FUNCTION_STUB_HEAD(void, GetActiveAtomicCounterBufferiv, GLuint program, GLuint bufferIndex, GLenum pname, GLint* params) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, GetActiveAtomicCounterBufferiv, program, bufferIndex, pname, params)
 DECLARE_GL_FUNCTION_STUB_HEAD(void, DrawTransformFeedbackInstanced, GLenum mode, GLuint id, GLsizei instancecount) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, DrawTransformFeedbackInstanced, mode, id, instancecount)
 DECLARE_GL_FUNCTION_STUB_HEAD(void, DrawTransformFeedbackStreamInstanced, GLenum mode, GLuint id, GLuint stream, GLsizei instancecount) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, DrawTransformFeedbackStreamInstanced, mode, id, stream, instancecount)
@@ -953,8 +975,8 @@ DECLARE_GL_FUNCTION_STUB_HEAD(void, InvalidateTexSubImage, GLuint texture, GLint
 DECLARE_GL_FUNCTION_STUB_HEAD(void, InvalidateTexImage, GLuint texture, GLint level) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, InvalidateTexImage, texture, level)
 DECLARE_GL_FUNCTION_STUB_HEAD(void, InvalidateBufferSubData, GLuint buffer, GLintptr offset, GLsizeiptr length) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, InvalidateBufferSubData, buffer, offset, length)
 DECLARE_GL_FUNCTION_STUB_HEAD(void, InvalidateBufferData, GLuint buffer) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, InvalidateBufferData, buffer)
-DECLARE_GL_FUNCTION_STUB_HEAD(void, MultiDrawArraysIndirect, GLenum mode, const void* indirect, GLsizei drawcount, GLsizei stride) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, MultiDrawArraysIndirect, mode, indirect, drawcount, stride)
-DECLARE_GL_FUNCTION_STUB_HEAD(void, MultiDrawElementsIndirect, GLenum mode, GLenum type, const void* indirect, GLsizei drawcount, GLsizei stride) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, MultiDrawElementsIndirect, mode, type, indirect, drawcount, stride)
+DECLARE_GL_FUNCTION_HEAD(void, MultiDrawArraysIndirect, GLenum mode, const void* indirect, GLsizei drawcount, GLsizei stride) DECLARE_GL_FUNCTION_END_NO_RETURN(void, MultiDrawArraysIndirect, mode, indirect, drawcount, stride)
+DECLARE_GL_FUNCTION_HEAD(void, MultiDrawElementsIndirect, GLenum mode, GLenum type, const void* indirect, GLsizei drawcount, GLsizei stride) DECLARE_GL_FUNCTION_END_NO_RETURN(void, MultiDrawElementsIndirect, mode, type, indirect, drawcount, stride)
 DECLARE_GL_FUNCTION_STUB_HEAD(GLint, GetProgramResourceLocationIndex, GLuint program, GLenum programInterface, const GLchar* name) DECLARE_GL_FUNCTION_STUB_END(GLint, GetProgramResourceLocationIndex, program, programInterface, name)
 DECLARE_GL_FUNCTION_STUB_HEAD(void, ShaderStorageBlockBinding, GLuint program, GLuint storageBlockIndex, GLuint storageBlockBinding) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, ShaderStorageBlockBinding, program, storageBlockIndex, storageBlockBinding)
 DECLARE_GL_FUNCTION_STUB_HEAD(void, TextureView, GLuint texture, GLenum target, GLuint origtexture, GLenum internalformat, GLuint minlevel, GLuint numlevels, GLuint minlayer, GLuint numlayers) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, TextureView, texture, target, origtexture, internalformat, minlevel, numlevels, minlayer, numlayers)
@@ -1086,6 +1108,7 @@ DECLARE_GL_FUNCTION_STUB_HEAD(void, SpecializeShader, GLuint shader, const GLcha
 DECLARE_GL_FUNCTION_STUB_HEAD(void, MultiDrawArraysIndirectCount, GLenum mode, const void* indirect, GLintptr drawcount, GLsizei maxdrawcount, GLsizei stride) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, MultiDrawArraysIndirectCount, mode, indirect, drawcount, maxdrawcount, stride)
 DECLARE_GL_FUNCTION_STUB_HEAD(void, MultiDrawElementsIndirectCount, GLenum mode, GLenum type, const void* indirect, GLintptr drawcount, GLsizei maxdrawcount, GLsizei stride) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, MultiDrawElementsIndirectCount, mode, type, indirect, drawcount, maxdrawcount, stride)
 DECLARE_GL_FUNCTION_STUB_HEAD(void, PolygonOffsetClamp, GLfloat factor, GLfloat units, GLfloat clamp) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, PolygonOffsetClamp, factor, units, clamp)
+DECLARE_GL_FUNCTION_STUB_HEAD(void, PrimitiveBoundingBoxARB, GLfloat minX, GLfloat minY, GLfloat minZ, GLfloat minW, GLfloat maxX, GLfloat maxY, GLfloat maxZ, GLfloat maxW) DECLARE_GL_FUNCTION_STUB_END(void, PrimitiveBoundingBoxARB, minX, minY, minZ, minW, maxX, maxY, maxZ, maxW)
 DECLARE_GL_FUNCTION_STUB_HEAD(GLuint64, GetTextureHandleARB, GLuint texture) DECLARE_GL_FUNCTION_STUB_END(GLuint64, GetTextureHandleARB, texture)
 DECLARE_GL_FUNCTION_STUB_HEAD(GLuint64, GetTextureSamplerHandleARB, GLuint texture, GLuint sampler) DECLARE_GL_FUNCTION_STUB_END(GLuint64, GetTextureSamplerHandleARB, texture, sampler)
 DECLARE_GL_FUNCTION_STUB_HEAD(void, MakeTextureHandleResidentARB, GLuint64 handle) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, MakeTextureHandleResidentARB, handle)
@@ -2806,3 +2829,274 @@ DECLARE_GL_FUNCTION_STUB_HEAD(void, ReplacementCodeuiTexCoord2fNormal3fVertex3fS
 DECLARE_GL_FUNCTION_STUB_HEAD(void, ReplacementCodeuiTexCoord2fNormal3fVertex3fvSUN, const GLuint* rc, const GLfloat* tc, const GLfloat* n, const GLfloat* v) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, ReplacementCodeuiTexCoord2fNormal3fVertex3fvSUN, rc, tc, n, v)
 DECLARE_GL_FUNCTION_STUB_HEAD(void, ReplacementCodeuiTexCoord2fColor4fNormal3fVertex3fSUN, GLuint rc, GLfloat s, GLfloat t, GLfloat r, GLfloat g, GLfloat b, GLfloat a, GLfloat nx, GLfloat ny, GLfloat nz, GLfloat x, GLfloat y, GLfloat z) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, ReplacementCodeuiTexCoord2fColor4fNormal3fVertex3fSUN, rc, s, t, r, g, b, a, nx, ny, nz, x, y, z)
 DECLARE_GL_FUNCTION_STUB_HEAD(void, ReplacementCodeuiTexCoord2fColor4fNormal3fVertex3fvSUN, const GLuint* rc, const GLfloat* tc, const GLfloat* c, const GLfloat* n, const GLfloat* v) DECLARE_GL_FUNCTION_STUB_END_NO_RETURN(void, ReplacementCodeuiTexCoord2fColor4fNormal3fVertex3fvSUN, rc, tc, c, n, v)
+
+MOBILEGL_GL_API void glDebugMessageControlARB(GLenum source, GLenum type, GLenum severity, GLsizei count,
+                                              const GLuint* ids, GLboolean enabled) {
+    glDebugMessageControl(source, type, severity, count, ids, enabled);
+}
+
+MOBILEGL_GL_API void glDebugMessageInsertARB(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length,
+                                             const GLchar* buf) {
+    glDebugMessageInsert(source, type, id, severity, length, buf);
+}
+
+MOBILEGL_GL_API void glDebugMessageCallbackARB(GLDEBUGPROC callback, const void* userParam) {
+    glDebugMessageCallback(callback, userParam);
+}
+
+MOBILEGL_GL_API GLuint glGetDebugMessageLogARB(GLuint count, GLsizei bufSize, GLenum* sources, GLenum* types,
+                                               GLuint* ids, GLenum* severities, GLsizei* lengths, GLchar* messageLog) {
+    return glGetDebugMessageLog(count, bufSize, sources, types, ids, severities, lengths, messageLog);
+}
+
+MOBILEGL_GL_API void glDrawArraysInstancedARB(GLenum mode, GLint first, GLsizei count, GLsizei instancecount) {
+    glDrawArraysInstanced(mode, first, count, instancecount);
+}
+
+MOBILEGL_GL_API void glDrawArraysInstancedEXT(GLenum mode, GLint first, GLsizei count, GLsizei instancecount) {
+    glDrawArraysInstanced(mode, first, count, instancecount);
+}
+
+MOBILEGL_GL_API void glDrawElementsInstancedARB(GLenum mode, GLsizei count, GLenum type, const void* indices,
+                                                GLsizei instancecount) {
+    glDrawElementsInstanced(mode, count, type, indices, instancecount);
+}
+
+MOBILEGL_GL_API void glDrawElementsInstancedEXT(GLenum mode, GLsizei count, GLenum type, const void* indices,
+                                                GLsizei instancecount) {
+    glDrawElementsInstanced(mode, count, type, indices, instancecount);
+}
+
+MOBILEGL_GL_API void glFramebufferTextureARB(GLenum target, GLenum attachment, GLuint texture, GLint level) {
+    glFramebufferTexture(target, attachment, texture, level);
+}
+
+MOBILEGL_GL_API void glFramebufferTextureLayerARB(GLenum target, GLenum attachment, GLuint texture, GLint level,
+                                                  GLint layer) {
+    glFramebufferTextureLayer(target, attachment, texture, level, layer);
+}
+
+MOBILEGL_GL_API void glGetFramebufferParameterivEXT(GLenum target, GLenum pname, GLint* params) {
+    glGetFramebufferParameteriv(target, pname, params);
+}
+
+MOBILEGL_GL_API GLenum glGetGraphicsResetStatusARB(void) {
+    return glGetGraphicsResetStatus();
+}
+
+MOBILEGL_GL_API void glGetnUniformfvARB(GLuint program, GLint location, GLsizei bufSize, GLfloat* params) {
+    glGetnUniformfv(program, location, bufSize, params);
+}
+
+MOBILEGL_GL_API void glGetnUniformivARB(GLuint program, GLint location, GLsizei bufSize, GLint* params) {
+    glGetnUniformiv(program, location, bufSize, params);
+}
+
+MOBILEGL_GL_API void glGetnUniformuivARB(GLuint program, GLint location, GLsizei bufSize, GLuint* params) {
+    glGetnUniformuiv(program, location, bufSize, params);
+}
+
+MOBILEGL_GL_API void glGetObjectLabelEXT(GLenum identifier, GLuint name, GLsizei bufSize, GLsizei* length,
+                                         GLchar* label) {
+    glGetObjectLabel(identifier, name, bufSize, length, label);
+}
+
+MOBILEGL_GL_API void* glMapNamedBuffer(GLuint buffer, GLenum access) {
+    MGLOG_W("Stub function: %s(...)", __FUNCTION__);
+    return nullptr;
+}
+
+MOBILEGL_GL_API void* glMapNamedBufferEXT(GLuint buffer, GLenum access) {
+    return glMapNamedBuffer(buffer, access);
+}
+
+MOBILEGL_GL_API void* glMapNamedBufferRange(GLuint buffer, GLintptr offset, GLsizeiptr length, GLbitfield access) {
+    MGLOG_W("Stub function: %s(...)", __FUNCTION__);
+    return nullptr;
+}
+
+MOBILEGL_GL_API void* glMapNamedBufferRangeEXT(GLuint buffer, GLintptr offset, GLsizeiptr length, GLbitfield access) {
+    return glMapNamedBufferRange(buffer, offset, length, access);
+}
+
+MOBILEGL_GL_API void glMinSampleShadingARB(GLfloat value) {
+    glMinSampleShading(value);
+}
+
+MOBILEGL_GL_API void glProgramParameteriARB(GLuint program, GLenum pname, GLint value) {
+    glProgramParameteri(program, pname, value);
+}
+
+MOBILEGL_GL_API void glProgramUniform1fEXT(GLuint program, GLint location, GLfloat v0) {
+    glProgramUniform1f(program, location, v0);
+}
+
+MOBILEGL_GL_API void glProgramUniform1fvEXT(GLuint program, GLint location, GLsizei count, const GLfloat* value) {
+    glProgramUniform1fv(program, location, count, value);
+}
+
+MOBILEGL_GL_API void glProgramUniform1iEXT(GLuint program, GLint location, GLint v0) {
+    glProgramUniform1i(program, location, v0);
+}
+
+MOBILEGL_GL_API void glProgramUniform1ivEXT(GLuint program, GLint location, GLsizei count, const GLint* value) {
+    glProgramUniform1iv(program, location, count, value);
+}
+
+MOBILEGL_GL_API void glProgramUniform1uiEXT(GLuint program, GLint location, GLuint v0) {
+    glProgramUniform1ui(program, location, v0);
+}
+
+MOBILEGL_GL_API void glProgramUniform1uivEXT(GLuint program, GLint location, GLsizei count, const GLuint* value) {
+    glProgramUniform1uiv(program, location, count, value);
+}
+
+MOBILEGL_GL_API void glProgramUniform2fEXT(GLuint program, GLint location, GLfloat v0, GLfloat v1) {
+    glProgramUniform2f(program, location, v0, v1);
+}
+
+MOBILEGL_GL_API void glProgramUniform2fvEXT(GLuint program, GLint location, GLsizei count, const GLfloat* value) {
+    glProgramUniform2fv(program, location, count, value);
+}
+
+MOBILEGL_GL_API void glProgramUniform2iEXT(GLuint program, GLint location, GLint v0, GLint v1) {
+    glProgramUniform2i(program, location, v0, v1);
+}
+
+MOBILEGL_GL_API void glProgramUniform2ivEXT(GLuint program, GLint location, GLsizei count, const GLint* value) {
+    glProgramUniform2iv(program, location, count, value);
+}
+
+MOBILEGL_GL_API void glProgramUniform2uiEXT(GLuint program, GLint location, GLuint v0, GLuint v1) {
+    glProgramUniform2ui(program, location, v0, v1);
+}
+
+MOBILEGL_GL_API void glProgramUniform2uivEXT(GLuint program, GLint location, GLsizei count, const GLuint* value) {
+    glProgramUniform2uiv(program, location, count, value);
+}
+
+MOBILEGL_GL_API void glProgramUniform3fEXT(GLuint program, GLint location, GLfloat v0, GLfloat v1, GLfloat v2) {
+    glProgramUniform3f(program, location, v0, v1, v2);
+}
+
+MOBILEGL_GL_API void glProgramUniform3fvEXT(GLuint program, GLint location, GLsizei count, const GLfloat* value) {
+    glProgramUniform3fv(program, location, count, value);
+}
+
+MOBILEGL_GL_API void glProgramUniform3iEXT(GLuint program, GLint location, GLint v0, GLint v1, GLint v2) {
+    glProgramUniform3i(program, location, v0, v1, v2);
+}
+
+MOBILEGL_GL_API void glProgramUniform3ivEXT(GLuint program, GLint location, GLsizei count, const GLint* value) {
+    glProgramUniform3iv(program, location, count, value);
+}
+
+MOBILEGL_GL_API void glProgramUniform3uiEXT(GLuint program, GLint location, GLuint v0, GLuint v1, GLuint v2) {
+    glProgramUniform3ui(program, location, v0, v1, v2);
+}
+
+MOBILEGL_GL_API void glProgramUniform3uivEXT(GLuint program, GLint location, GLsizei count, const GLuint* value) {
+    glProgramUniform3uiv(program, location, count, value);
+}
+
+MOBILEGL_GL_API void glProgramUniform4fEXT(GLuint program, GLint location, GLfloat v0, GLfloat v1, GLfloat v2,
+                                           GLfloat v3) {
+    glProgramUniform4f(program, location, v0, v1, v2, v3);
+}
+
+MOBILEGL_GL_API void glProgramUniform4fvEXT(GLuint program, GLint location, GLsizei count, const GLfloat* value) {
+    glProgramUniform4fv(program, location, count, value);
+}
+
+MOBILEGL_GL_API void glProgramUniform4iEXT(GLuint program, GLint location, GLint v0, GLint v1, GLint v2, GLint v3) {
+    glProgramUniform4i(program, location, v0, v1, v2, v3);
+}
+
+MOBILEGL_GL_API void glProgramUniform4ivEXT(GLuint program, GLint location, GLsizei count, const GLint* value) {
+    glProgramUniform4iv(program, location, count, value);
+}
+
+MOBILEGL_GL_API void glProgramUniform4uiEXT(GLuint program, GLint location, GLuint v0, GLuint v1, GLuint v2,
+                                            GLuint v3) {
+    glProgramUniform4ui(program, location, v0, v1, v2, v3);
+}
+
+MOBILEGL_GL_API void glProgramUniform4uivEXT(GLuint program, GLint location, GLsizei count, const GLuint* value) {
+    glProgramUniform4uiv(program, location, count, value);
+}
+
+MOBILEGL_GL_API void glProgramUniformMatrix2fvEXT(GLuint program, GLint location, GLsizei count,
+                                                  GLboolean transpose, const GLfloat* value) {
+    glProgramUniformMatrix2fv(program, location, count, transpose, value);
+}
+
+MOBILEGL_GL_API void glProgramUniformMatrix2x3fvEXT(GLuint program, GLint location, GLsizei count,
+                                                    GLboolean transpose, const GLfloat* value) {
+    glProgramUniformMatrix2x3fv(program, location, count, transpose, value);
+}
+
+MOBILEGL_GL_API void glProgramUniformMatrix2x4fvEXT(GLuint program, GLint location, GLsizei count,
+                                                    GLboolean transpose, const GLfloat* value) {
+    glProgramUniformMatrix2x4fv(program, location, count, transpose, value);
+}
+
+MOBILEGL_GL_API void glProgramUniformMatrix3fvEXT(GLuint program, GLint location, GLsizei count,
+                                                  GLboolean transpose, const GLfloat* value) {
+    glProgramUniformMatrix3fv(program, location, count, transpose, value);
+}
+
+MOBILEGL_GL_API void glProgramUniformMatrix3x2fvEXT(GLuint program, GLint location, GLsizei count,
+                                                    GLboolean transpose, const GLfloat* value) {
+    glProgramUniformMatrix3x2fv(program, location, count, transpose, value);
+}
+
+MOBILEGL_GL_API void glProgramUniformMatrix3x4fvEXT(GLuint program, GLint location, GLsizei count,
+                                                    GLboolean transpose, const GLfloat* value) {
+    glProgramUniformMatrix3x4fv(program, location, count, transpose, value);
+}
+
+MOBILEGL_GL_API void glProgramUniformMatrix4fvEXT(GLuint program, GLint location, GLsizei count,
+                                                  GLboolean transpose, const GLfloat* value) {
+    glProgramUniformMatrix4fv(program, location, count, transpose, value);
+}
+
+MOBILEGL_GL_API void glProgramUniformMatrix4x2fvEXT(GLuint program, GLint location, GLsizei count,
+                                                    GLboolean transpose, const GLfloat* value) {
+    glProgramUniformMatrix4x2fv(program, location, count, transpose, value);
+}
+
+MOBILEGL_GL_API void glProgramUniformMatrix4x3fvEXT(GLuint program, GLint location, GLsizei count,
+                                                    GLboolean transpose, const GLfloat* value) {
+    glProgramUniformMatrix4x3fv(program, location, count, transpose, value);
+}
+
+MOBILEGL_GL_API void glReadnPixelsARB(GLint x, GLint y, GLsizei width, GLsizei height, GLenum format, GLenum type,
+                                      GLsizei bufSize, void* data) {
+    glReadnPixels(x, y, width, height, format, type, bufSize, data);
+}
+
+MOBILEGL_GL_API void glTexBufferARB(GLenum target, GLenum internalformat, GLuint buffer) {
+    glTexBuffer(target, internalformat, buffer);
+}
+
+MOBILEGL_GL_API void glTexStorage1D(GLenum target, GLsizei levels, GLenum internalformat, GLsizei width) {
+    glTexStorage1DEXT(target, levels, internalformat, width);
+}
+
+MOBILEGL_GL_API void glTexStorage2DEXT(GLenum target, GLsizei levels, GLenum internalformat, GLsizei width,
+                                       GLsizei height) {
+    glTexStorage2D(target, levels, internalformat, width, height);
+}
+
+MOBILEGL_GL_API void glTexStorage3DEXT(GLenum target, GLsizei levels, GLenum internalformat, GLsizei width,
+                                       GLsizei height, GLsizei depth) {
+    glTexStorage3D(target, levels, internalformat, width, height, depth);
+}
+
+MOBILEGL_GL_API void glVertexAttribDivisorARB(GLuint index, GLuint divisor) {
+    glVertexAttribDivisor(index, divisor);
+}
+
+MOBILEGL_GL_API void glWindowRectanglesEXT(GLenum mode, GLsizei count, const GLint* box) {
+    MGLOG_W("Stub function: %s(...)", __FUNCTION__);
+}

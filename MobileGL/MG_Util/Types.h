@@ -1,3 +1,11 @@
+// MobileGL - MobileGL/MG_Util/Types.h
+// Copyright (c) 2025-2026 MobileGL-Dev
+// Licensed under the GNU Lesser General Public License v3.0:
+//   https://www.gnu.org/licenses/gpl-3.0.txt
+//   https://www.gnu.org/licenses/lgpl-3.0.txt
+// SPDX-License-Identifier: LGPL-3.0-only
+// End of Source File Header
+
 #pragma once
 
 #include <Includes.h>
@@ -170,11 +178,35 @@ namespace MobileGL {
         Range1D m_range;
     };
 
+    struct ComponentSizes {
+        Int Red = 0;
+        Int Green = 0;
+        Int Blue = 0;
+        Int Alpha = 0;
+        Int Depth = 0;
+        Int Stencil = 0;
+    };
+
+    enum class VersionType {
+        Release,
+        Unstable,
+        Development
+    };
+
+    struct VersionStringFormatAttrib {
+        Int majorWidth = 0; // 0 = no formatting
+        Int minorWidth = 0;
+        Int patchWidth = 0;
+        Bool useSuffix = true;
+        Bool autoPatch = false; // If patch == 0, skip the patch part; else add normally
+    };
+
     struct Version {
         Int Major;
         Int Minor;
         Int Patch;
         Optional<String> Suffix;
+        Optional<VersionType> Type;
 
         String toString(Pair<Bool, Bool> dots = {true, true}, Bool useSuffix = true) const {
             StringStream result;
@@ -182,9 +214,44 @@ namespace MobileGL {
                    << (useSuffix && Suffix.has_value() ? *Suffix : "");
             return result.str();
         }
+
+        String toFormattedString(const VersionStringFormatAttrib& fmt) const {
+            auto formatNumber = [](Int value, Int width) {
+                String s = std::to_string(value);
+                if (width <= 0) return s;
+
+                if ((Int)s.size() > width) {
+                    return s.substr(s.size() - width);
+                } else if ((Int)s.size() < width) {
+                    return String(width - s.size(), '0') + s;
+                }
+                return s;
+            };
+
+            StringStream result;
+
+            result << formatNumber(Major, fmt.majorWidth) << "." << formatNumber(Minor, fmt.minorWidth);
+
+            Bool shouldShowPatch = true;
+            if (fmt.autoPatch) {
+                shouldShowPatch = (Patch != 0);
+            }
+
+            if (shouldShowPatch) {
+                result << "." << formatNumber(Patch, fmt.patchWidth);
+            }
+
+            if (fmt.useSuffix && Suffix.has_value()) {
+                result << *Suffix;
+            }
+
+            return result.str();
+        }
     };
 
-    struct BackendCap {};
+    struct BackendCap {
+        Bool AllowVSOnlyPrograms = false;
+    };
 
     struct GLInfo {
         Version TargetGLVersion;

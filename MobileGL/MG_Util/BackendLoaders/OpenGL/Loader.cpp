@@ -1,3 +1,11 @@
+// MobileGL - MobileGL/MG_Util/BackendLoaders/OpenGL/Loader.cpp
+// Copyright (c) 2025-2026 MobileGL-Dev
+// Licensed under the GNU Lesser General Public License v3.0:
+//   https://www.gnu.org/licenses/gpl-3.0.txt
+//   https://www.gnu.org/licenses/lgpl-3.0.txt
+// SPDX-License-Identifier: LGPL-3.0-only
+// End of Source File Header
+
 #include "Loader.h"
 
 #define GL_FUNC_DECL(name) name##_PTR name;
@@ -418,6 +426,14 @@ namespace MobileGL {
             EGL_FUNC_DECL(eglWaitClient)
             EGL_FUNC_DECL(eglWaitGL)
             EGL_FUNC_DECL(eglWaitNative)
+            EGL_FUNC_DECL(eglCreateSync)
+            EGL_FUNC_DECL(eglDestroySync)
+            EGL_FUNC_DECL(eglClientWaitSync)
+            EGL_FUNC_DECL(eglGetSyncAttrib)
+            EGL_FUNC_DECL(eglCreateImage)
+            EGL_FUNC_DECL(eglDestroyImage)
+            EGL_FUNC_DECL(eglCreatePlatformPixmapSurface)
+            EGL_FUNC_DECL(eglWaitSync)
         } // namespace EGL
     } // namespace MG_External
 
@@ -426,18 +442,26 @@ namespace MobileGL {
 
     namespace MG_Util {
         namespace BackendLoader::GLES {
-            void Init() {
+            Bool Init() {
                 LoadLibs();
+                if (libGLES == nullptr || libEGL == nullptr ||
+                    (glGetError_PTR)ProcAddress(libGLES, "glGetError") == nullptr) {
+                    return false;
+                }
                 InitEGL();
                 InitGLES();
                 DestroyTempEGLCtx();
+                return true;
             }
 
             void *libGLES = nullptr, *libEGL = nullptr;
 
-            static const char* LibPathPrefixes[] = {"", "/opt/vc/lib/", "/usr/local/lib/", "/usr/lib/", nullptr};
+            static const char* LibPathPrefixes[] = {
+                "/opt/vc/lib/", "/usr/local/lib/", "/usr/lib/", "/usr/lib/x86_64-linux-gnu/",
+                "", // We should put this to the end of the list to avoid breaking `LD_LIBRARY_PATH` usage
+                nullptr};
             static const char* LibExts[] = {"so", "so.1", "so.2", "dylib", "dll", nullptr};
-            static const char* GLES3Libs[] = {"libGLESv3_CM", "libGLESv3", nullptr};
+            static const char* GLES3Libs[] = {"libGLESv3_CM", "libGLESv3", "libGLESv2_CM", "libGLESv2", nullptr};
             static const char* EGLLibs[] = {"libEGL", nullptr};
 
             void* OpenLib(const char** names, const char* override) {
@@ -483,16 +507,25 @@ namespace MobileGL {
             }
 
             void InitGLESCapabilities() {
+                auto* vendorName = MG_External::GLES::glGetString(GL_VENDOR);
+                MGLOG_I("GL_VENDOR: %s", vendorName);
+                auto* gpuName = MG_External::GLES::glGetString(GL_RENDERER);
+                MGLOG_I("GL_RENDERER: %s", gpuName);
                 MG_External::GLES::glGetIntegerv(GL_MAJOR_VERSION, &MG_External::GLES::g_glesCaps.version.Major);
                 MG_External::GLES::glGetIntegerv(GL_MINOR_VERSION, &MG_External::GLES::g_glesCaps.version.Minor);
 
                 GLint extCount = 0;
                 MG_External::GLES::glGetIntegerv(GL_NUM_EXTENSIONS, &extCount);
+                MGLOG_I("Detected %d OpenGL ES extensions:", extCount);
                 for (GLint i = 0; i < extCount; ++i) {
                     const char* extension = (const char*)MG_External::GLES::glGetStringi(GL_EXTENSIONS, i);
                     if (extension) {
+                        MGLOG_I("    %s", extension);
                         if (std::strcmp(extension, "GL_EXT_buffer_storage") == 0) {
                             MG_External::GLES::g_glesCaps.hasPersistentMapping = true;
+                        }
+                        if (std::strcmp(extension, "GL_EXT_texture_norm16") == 0) {
+                            MG_External::GLES::g_glesCaps.hasNorm16Texture = true;
                         }
                     }
                 }
@@ -889,6 +922,7 @@ namespace MobileGL {
                 INIT_EGL_FUNC(eglCreatePbufferFromClientBuffer)
                 INIT_EGL_FUNC(eglCreatePbufferSurface)
                 INIT_EGL_FUNC(eglCreatePixmapSurface)
+                INIT_EGL_FUNC(eglCreatePlatformPixmapSurface)
                 INIT_EGL_FUNC(eglCreatePlatformWindowSurface)
                 INIT_EGL_FUNC(eglCreateWindowSurface)
                 INIT_EGL_FUNC(eglDestroyContext)
@@ -919,6 +953,14 @@ namespace MobileGL {
                 INIT_EGL_FUNC(eglWaitClient)
                 INIT_EGL_FUNC(eglWaitGL)
                 INIT_EGL_FUNC(eglWaitNative)
+                INIT_EGL_FUNC(eglCreateSync)
+                INIT_EGL_FUNC(eglDestroySync)
+                INIT_EGL_FUNC(eglClientWaitSync)
+                INIT_EGL_FUNC(eglGetSyncAttrib)
+                INIT_EGL_FUNC(eglCreateImage)
+                INIT_EGL_FUNC(eglDestroyImage)
+                INIT_EGL_FUNC(eglGetPlatformDisplay)
+                INIT_EGL_FUNC(eglWaitSync)
 
                 EGLint configAttribs[] = {EGL_RED_SIZE,
                                           8,

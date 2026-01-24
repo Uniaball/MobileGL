@@ -1,3 +1,11 @@
+// MobileGL - MobileGL/MG_State/GLState/ProgramState/ShaderObject.cpp
+// Copyright (c) 2025-2026 MobileGL-Dev
+// Licensed under the GNU Lesser General Public License v3.0:
+//   https://www.gnu.org/licenses/gpl-3.0.txt
+//   https://www.gnu.org/licenses/lgpl-3.0.txt
+// SPDX-License-Identifier: LGPL-3.0-only
+// End of Source File Header
+
 #include "ShaderObject.h"
 #include <MG_Util/ShaderTranspiler/Types.h>
 #include <MG_Util/ShaderTranspiler/ShaderCompiler.h>
@@ -34,6 +42,8 @@ namespace MobileGL {
                 } else {
                     m_compileStatus = false;
                     m_infoLog = result.error().log;
+                    MGLOG_D("ShaderObject::Compile: Shader %d compilation failed.\nSource:\n%s\nInfoLog:\n%s\nSetting m_compileStatus = false as a result.",
+                            m_externalIndex, m_source.c_str(), m_infoLog.c_str());
                 }
             }
 

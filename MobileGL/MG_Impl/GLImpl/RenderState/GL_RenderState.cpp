@@ -1,3 +1,11 @@
+// MobileGL - MobileGL/MG_Impl/GLImpl/RenderState/GL_RenderState.cpp
+// Copyright (c) 2025-2026 MobileGL-Dev
+// Licensed under the GNU Lesser General Public License v3.0:
+//   https://www.gnu.org/licenses/gpl-3.0.txt
+//   https://www.gnu.org/licenses/lgpl-3.0.txt
+// SPDX-License-Identifier: LGPL-3.0-only
+// End of Source File Header
+
 #include "GL_RenderState.h"
 #include "MG_State/GLState/RenderState/RenderState.h"
 #include "MG_Util/Converters/GLToStr/GLEnumConverter.h"
@@ -79,6 +87,7 @@ namespace MobileGL {
         }
 
         void PixelStorei_State(GLenum pname, GLint param) {
+            MGLOG_D("%s: %s = %d", __func__, MG_Util::ConvertGLEnumToString(pname).c_str(), param);
             PixelStoreParam pixelStoreParam = MG_Util::ConvertGLEnumToPixelStoreParam(pname);
             if (pixelStoreParam == PixelStoreParam::Unknown) {
                 MG_State::pGLContext->RecordError(

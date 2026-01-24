@@ -1,3 +1,11 @@
+// MobileGL - MobileGL/MG_Util/Converters/GLToMG/FramebufferEnumConverter.cpp
+// Copyright (c) 2025-2026 MobileGL-Dev
+// Licensed under the GNU Lesser General Public License v3.0:
+//   https://www.gnu.org/licenses/gpl-3.0.txt
+//   https://www.gnu.org/licenses/lgpl-3.0.txt
+// SPDX-License-Identifier: LGPL-3.0-only
+// End of Source File Header
+
 #include "FramebufferEnumConverter.h"
 
 namespace MobileGL {
@@ -29,6 +37,16 @@ namespace MobileGL {
             case GL_UNKNOWN_MGL:
             default:
                 return FramebufferAttachmentType::Unknown;
+            }
+        }
+
+        RenderbufferTarget ConvertGLEnumToRenderbufferTarget(GLenum renderbufferTarget) {
+            switch (renderbufferTarget) {
+            case GL_RENDERBUFFER:
+                return RenderbufferTarget::Renderbuffer;
+            case GL_UNKNOWN_MGL:
+            default:
+                return RenderbufferTarget::Unknown;
             }
         }
     } // namespace MG_Util

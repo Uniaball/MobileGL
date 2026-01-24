@@ -1,3 +1,11 @@
+// MobileGL - MobileGL/MG_Backend/DirectGLES/DirectGLES.cpp
+// Copyright (c) 2025-2026 MobileGL-Dev
+// Licensed under the GNU Lesser General Public License v3.0:
+//   https://www.gnu.org/licenses/gpl-3.0.txt
+//   https://www.gnu.org/licenses/lgpl-3.0.txt
+// SPDX-License-Identifier: LGPL-3.0-only
+// End of Source File Header
+
 #include "DirectGLES.h"
 #include "Utils.h"
 #include "Managers.h"
@@ -13,25 +21,38 @@
 #include <MG_Util/Converters/MGToGL/RenderStateEnumConverter.h>
 
 namespace MobileGL::MG_Backend::DirectGLES {
+    enum class DrawSyncBit : Uint32 {
+        None = 0,
+        IndexBuffer = 1 << 0,
+        IndirectBuffer = 1 << 1,
+        Instancing = 1 << 2
+    };
+
+    inline DrawSyncBit operator|(DrawSyncBit a, DrawSyncBit b) {
+        return static_cast<DrawSyncBit>(static_cast<uint32_t>(a) | static_cast<uint32_t>(b));
+    }
+
+    inline DrawSyncBit& operator|=(DrawSyncBit& a, DrawSyncBit b) {
+        a = a | b;
+        return a;
+    }
+
     namespace DebugImpl {
-        void ErrorLopper::Loop(std::function<void(GLenum)> func) {
 #if MOBILEGL_LOG_ACTIVE_LEVEL <= MOBILEGL_LOG_LEVEL_DEBUG
+        void ErrorLopper::Loop(std::function<void(GLenum)> func) {
             GLenum err = MG_External::GLES::glGetError();
             while (err != GL_NO_ERROR) {
                 func(err);
                 err = MG_External::GLES::glGetError();
             }
-#endif
         }
 
         void ErrorLopper::Clear() {
-#if MOBILEGL_LOG_ACTIVE_LEVEL <= MOBILEGL_LOG_LEVEL_DEBUG
             GLenum err = MG_External::GLES::glGetError();
             while (err != GL_NO_ERROR) {
                 MGLOG_D("Stray GL Error cleared: %s", MG_Util::ConvertGLEnumToString(err).c_str());
                 err = MG_External::GLES::glGetError();
             }
-#endif
         }
 
         ErrorLopper::ErrorLopper() {
@@ -40,14 +61,38 @@ namespace MobileGL::MG_Backend::DirectGLES {
         ErrorLopper::~ErrorLopper() {
             Clear();
         }
+#else
+        void ErrorLopper::Loop(std::function<void(GLenum)> func) {}
+        void ErrorLopper::Clear() {}
+        ErrorLopper::ErrorLopper() {}
+        ErrorLopper::~ErrorLopper() {}
+#endif
+
+#if MOBILEGL_LOG_ACTIVE_LEVEL <= MOBILEGL_LOG_LEVEL_DEBUG
+        OpenGLScopeMarker::OpenGLScopeMarker(String scopeName) {
+            MG_External::GLES::glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0, -1, scopeName.c_str());
+        }
+
+        OpenGLScopeMarker::~OpenGLScopeMarker() {
+            MG_External::GLES::glPopDebugGroup();
+        }
+#else
+        OpenGLScopeMarker::OpenGLScopeMarker(String scopeName) {}
+
+        OpenGLScopeMarker::~OpenGLScopeMarker() {}
+#endif
     } // namespace DebugImpl
 
     // TODO: deletion for deleted objects
 
     namespace BufferImpl {
-        void SyncNeccessaryBuffers() {
+        void SyncNeccessaryBuffers(Bool includeIBO = false, Bool includeIndirectBuffer = false) {
+#ifdef TRACY_ENABLE
+            ZoneScopedC(TRACY_ZONECOLOR_BACKEND);
+#endif
             // All buffers we need are:
-            //   1.VBO 2.IBO 3.UBO 4.PBO 5.SSBO (TODO)
+            //   1.VBO 2.IBO (if needed) 3.UBO 4.IndirectBuffer (if needed) 5.SSBO (TODO)
+            // PBO is not needed since it should be handled in frontend
 
             Vector<SharedPtr<MG_State::GLState::BufferObject>> buffersToSync;
             const auto& currentVAOObject = MG_State::pGLContext->GetBoundVertexArray();
@@ -69,11 +114,25 @@ namespace MobileGL::MG_Backend::DirectGLES {
             }
 
             // IBO
-            const auto& possibleIBO = currentVAOObject->GetIndexBufferBindingSlot().GetBoundObject();
-            if (possibleIBO) {
-                const auto& end = buffersToSync.end();
-                if (std::find(buffersToSync.begin(), end, possibleIBO) == end) {
-                    buffersToSync.push_back(possibleIBO);
+            if (includeIBO) {
+                const auto& possibleIBO = currentVAOObject->GetIndexBufferBindingSlot().GetBoundObject();
+                if (possibleIBO) {
+                    const auto& end = buffersToSync.end();
+                    if (std::find(buffersToSync.begin(), end, possibleIBO) == end) {
+                        buffersToSync.push_back(possibleIBO);
+                    }
+                }
+            }
+
+            // Indirect Buffer Object
+            if (includeIndirectBuffer) {
+                const auto& possibleIndirectBuffer =
+                    MG_State::pGLContext->GetBufferBindingSlot(BufferTarget::DrawIndirect).GetBoundObject();
+                if (possibleIndirectBuffer) {
+                    const auto& end = buffersToSync.end();
+                    if (std::find(buffersToSync.begin(), end, possibleIndirectBuffer) == end) {
+                        buffersToSync.push_back(possibleIndirectBuffer);
+                    }
                 }
             }
 
@@ -106,7 +165,10 @@ namespace MobileGL::MG_Backend::DirectGLES {
     } // namespace BufferImpl
 
     namespace VertexArrayImpl {
-        void SyncCurrentVAO() {
+        void SyncCurrentVAO(Bool needDivisor) {
+#ifdef TRACY_ENABLE
+            ZoneScopedC(TRACY_ZONECOLOR_BACKEND);
+#endif
             auto currentVAOObject = MG_State::pGLContext->GetBoundVertexArray();
             if (!currentVAOObject) {
                 MGLOG_E("No VAO is currently bound, cannot sync current VAO.");
@@ -121,13 +183,16 @@ namespace MobileGL::MG_Backend::DirectGLES {
             } else {
                 backendVAOObject = backendVAOIt->second;
             }
-            backendVAOObject->SyncToBackend(currentVAOObject);
+            backendVAOObject->SyncToBackend(currentVAOObject, needDivisor);
         }
     } // namespace VertexArrayImpl
 
     namespace TextureImpl {
         SharedPtr<BackendTextureObject> SyncTextureObjectToBackend(
             SharedPtr<MG_State::GLState::ITextureObject>& textureObject) {
+#ifdef TRACY_ENABLE
+            ZoneScopedC(TRACY_ZONECOLOR_BACKEND);
+#endif
             const auto& backendTextureIt = g_backendTextureObjects.find(textureObject);
             SharedPtr<BackendTextureObject> backendTextureObject;
             if (backendTextureIt == g_backendTextureObjects.end()) {
@@ -141,10 +206,15 @@ namespace MobileGL::MG_Backend::DirectGLES {
         }
 
         void SyncNeccessaryTextures() {
+#ifdef TRACY_ENABLE
+            ZoneScopedC(TRACY_ZONECOLOR_BACKEND);
+#endif
             // All textures we need are:
             //   1. textures bound to texture units (TODO: only sync ones that are used in current program)
             //   2. textures used in current FBO
             //   3. textures bound to image units (TODO)
+            constexpr SizeT TextureTargetCount = static_cast<SizeT>(TextureTarget::TextureTargetCount);
+            std::bitset<TextureTargetCount> dirtyTextureTargetBits;
 
             Vector<SharedPtr<MG_State::GLState::ITextureObject>> texturesToSync;
 
@@ -156,6 +226,7 @@ namespace MobileGL::MG_Backend::DirectGLES {
                         const auto& end = texturesToSync.end();
                         if (std::find(texturesToSync.begin(), end, textureObject) == end) {
                             texturesToSync.push_back(textureObject);
+                            dirtyTextureTargetBits.set(static_cast<SizeT>(textureObject->GetTarget()));
                         }
                     }
                 }
@@ -171,8 +242,20 @@ namespace MobileGL::MG_Backend::DirectGLES {
                         const auto& end = texturesToSync.end();
                         if (std::find(texturesToSync.begin(), end, textureObject) == end) {
                             texturesToSync.push_back(textureObject);
+                            dirtyTextureTargetBits.set(static_cast<SizeT>(textureObject->GetTarget()));
                         }
                     }
+                }
+            }
+
+            BufferImpl::BackendBufferBindingProtector pixelUnpackProtector =
+                BufferImpl::BackendBufferBindingProtector(GL_PIXEL_UNPACK_BUFFER);
+
+            Vector<BackendTextureBindingProtector> textureBindingProtectors;
+            for (SizeT target = 0; target < TextureTargetCount; ++target) {
+                if (dirtyTextureTargetBits[target]) {
+                    textureBindingProtectors.emplace_back(
+                        MG_Util::ConvertTextureTargetToGLEnum(static_cast<TextureTarget>(target)));
                 }
             }
 
@@ -185,6 +268,9 @@ namespace MobileGL::MG_Backend::DirectGLES {
 
     namespace FramebufferImpl {
         void SyncCurrentFBO() {
+#ifdef TRACY_ENABLE
+            ZoneScopedC(TRACY_ZONECOLOR_BACKEND);
+#endif
             const FramebufferTarget fboTargets[] = {FramebufferTarget::Draw, FramebufferTarget::Read};
 
             MG_State::GLState::FramebufferObject* lastUpdatedFBO = nullptr;
@@ -226,6 +312,9 @@ namespace MobileGL::MG_Backend::DirectGLES {
 
     namespace RenderStateImpl {
         void SyncRenderState() {
+#ifdef TRACY_ENABLE
+            ZoneScopedC(TRACY_ZONECOLOR_BACKEND);
+#endif
             MG_External::GLES::glViewport(
                 MG_State::pGLContext->GetViewport().x(), MG_State::pGLContext->GetViewport().y(),
                 MG_State::pGLContext->GetViewport().z(), MG_State::pGLContext->GetViewport().w());
@@ -286,6 +375,9 @@ namespace MobileGL::MG_Backend::DirectGLES {
 
     namespace PrgramImpl {
         void SyncCurrentProgram() {
+#ifdef TRACY_ENABLE
+            ZoneScopedC(TRACY_ZONECOLOR_BACKEND);
+#endif
             auto currentProgram = MG_State::pGLContext->GetCurrentProgram();
             if (!currentProgram || !currentProgram->GetLinkStatus()) {
                 MG_External::GLES::glUseProgram(0);
@@ -307,6 +399,9 @@ namespace MobileGL::MG_Backend::DirectGLES {
     } // namespace PrgramImpl
 
     void BindCurrentFBO(FramebufferTarget target) {
+#ifdef TRACY_ENABLE
+        ZoneScopedC(TRACY_ZONECOLOR_BACKEND);
+#endif
         const auto& currentFBO = MG_State::pGLContext->GetFramebufferBindingSlot(target).GetBoundObject();
         if (currentFBO && currentFBO != MG_Impl::GLImpl::FramebufferImpl::pDefaultFramebufferInfo->defaultFBO) {
             const auto& backendFBOIt = FramebufferImpl::g_backendFramebufferObjects.find(currentFBO);
@@ -323,9 +418,12 @@ namespace MobileGL::MG_Backend::DirectGLES {
         }
     }
 
-    void PrepareForDraw() {
-        BufferImpl::SyncNeccessaryBuffers();
-        VertexArrayImpl::SyncCurrentVAO();
+    void PrepareForDraw(DrawSyncBit syncBit) {
+#ifdef TRACY_ENABLE
+        ZoneScopedC(TRACY_ZONECOLOR_BACKEND);
+#endif
+        BufferImpl::SyncNeccessaryBuffers(syncBit & DrawSyncBit::IndexBuffer, syncBit & DrawSyncBit::IndirectBuffer);
+        VertexArrayImpl::SyncCurrentVAO(syncBit & DrawSyncBit::Instancing);
         TextureImpl::SyncNeccessaryTextures();
         FramebufferImpl::SyncCurrentFBO();
         PrgramImpl::SyncCurrentProgram();
@@ -333,63 +431,76 @@ namespace MobileGL::MG_Backend::DirectGLES {
 
         BindCurrentFBO(FramebufferTarget::Draw);
 
-        const auto& currentVAO = MG_State::pGLContext->GetBoundVertexArray();
-        if (currentVAO) {
-            const auto& backendVAOIt = VertexArrayImpl::g_backendVertexArrayObjects.find(currentVAO);
-            if (backendVAOIt != VertexArrayImpl::g_backendVertexArrayObjects.end()) {
-                backendVAOIt->second->Bind();
-            }
-        } else {
-            MG_External::GLES::glBindVertexArray(0);
-        }
-
-        Int maxTextureUnits = MG_State::GLState::TextureState::MAX_TEXTURE_IMAGE_UNITS;
-        for (Int unit = 0; unit < maxTextureUnits; ++unit) {
-            auto& textureUnit = MG_State::pGLContext->GetTextureUnitObject(unit);
-
-            MG_External::GLES::glActiveTexture(GL_TEXTURE0 + unit);
-
-            for (const auto& bindingSlot : textureUnit.GetAllBindingSlots()) {
-                const auto& textureObject = bindingSlot.GetBoundObject();
-                if (!textureObject) continue;
-
-                // Bind texture object
-                auto target = textureObject->GetTarget();
-                if (target == TextureTarget::TextureBuffer || target == TextureTarget::Texture1D ||
-                    target == TextureTarget::TextureRectangle || target == TextureTarget::Texture2DMultisampleArray ||
-                    target == TextureTarget::Texture1DArray || target == TextureTarget::Texture3D ||
-                    target == TextureTarget::Texture2DMultisample || target == TextureTarget::Texture2DArray) {
-                    MGLOG_D("    Texture target %s is not supported, skipping.",
-                            MG_Util::ConvertTextureTargetToString(target).c_str());
-                    continue;
-                }
-                const auto& backendTextureIt = TextureImpl::g_backendTextureObjects.find(textureObject);
-                if (backendTextureIt == TextureImpl::g_backendTextureObjects.end()) continue;
-
-                GLenum targetGL = MG_Util::ConvertTextureTargetToGLEnum(target);
-                backendTextureIt->second->Bind(targetGL);
-            }
-
-            // Bind sampler object
-            const auto& samplerObject = textureUnit.GetSamplerObject();
-            if (samplerObject) {
-                const auto& backendSamplerIt = SamplerImpl::g_backendSamplerObjects.find(samplerObject);
-                if (backendSamplerIt != SamplerImpl::g_backendSamplerObjects.end()) {
-                    backendSamplerIt->second->Bind(unit);
+        {
+#ifdef TRACY_ENABLE
+            ZoneScopedNC("BindCurrentVAO", TRACY_ZONECOLOR_BACKEND);
+#endif
+            const auto& currentVAO = MG_State::pGLContext->GetBoundVertexArray();
+            if (currentVAO) {
+                const auto& backendVAOIt = VertexArrayImpl::g_backendVertexArrayObjects.find(currentVAO);
+                if (backendVAOIt != VertexArrayImpl::g_backendVertexArrayObjects.end()) {
+                    backendVAOIt->second->Bind();
                 }
             } else {
-                MG_External::GLES::glBindSampler(unit, 0);
+                MG_External::GLES::glBindVertexArray(0);
+            }
+        }
+
+        {
+#ifdef TRACY_ENABLE
+            ZoneScopedNC("BindCurrentTextures", TRACY_ZONECOLOR_BACKEND);
+#endif
+            Int maxTextureUnits = MG_State::GLState::TextureState::MAX_TEXTURE_IMAGE_UNITS;
+            for (Int unit = 0; unit < maxTextureUnits; ++unit) {
+                auto& textureUnit = MG_State::pGLContext->GetTextureUnitObject(unit);
+
+                MG_External::GLES::glActiveTexture(GL_TEXTURE0 + unit);
+
+                for (const auto& bindingSlot : textureUnit.GetAllBindingSlots()) {
+                    const auto& textureObject = bindingSlot.GetBoundObject();
+                    if (!textureObject) continue;
+
+                    // Bind texture object
+                    auto target = textureObject->GetTarget();
+                    if (!TextureImpl::IsSupportedTextureTarget(target)) {
+                        MGLOG_D("    Texture target %s is not supported, skipping.",
+                                MG_Util::ConvertTextureTargetToString(target).c_str());
+                        continue;
+                    }
+                    const auto& backendTextureIt = TextureImpl::g_backendTextureObjects.find(textureObject);
+                    if (backendTextureIt == TextureImpl::g_backendTextureObjects.end()) continue;
+
+                    GLenum targetGL = MG_Util::ConvertTextureTargetToGLEnum(target);
+                    backendTextureIt->second->Bind(targetGL);
+                }
+
+                // Bind sampler object
+                const auto& samplerObject = textureUnit.GetSamplerObject();
+                if (samplerObject) {
+                    const auto& backendSamplerIt = SamplerImpl::g_backendSamplerObjects.find(samplerObject);
+                    if (backendSamplerIt != SamplerImpl::g_backendSamplerObjects.end()) {
+                        backendSamplerIt->second->Bind(unit);
+                    }
+                } else {
+                    MG_External::GLES::glBindSampler(unit, 0);
+                }
             }
         }
 
         const auto& currentProgram = MG_State::pGLContext->GetCurrentProgram();
         if (currentProgram && currentProgram->GetLinkStatus()) {
+#ifdef TRACY_ENABLE
+            ZoneScopedNC("BindCurrentProgram", TRACY_ZONECOLOR_BACKEND);
+#endif
             const auto& backendProgramIt = PrgramImpl::g_backendProgramObjects.find(currentProgram);
             if (backendProgramIt != PrgramImpl::g_backendProgramObjects.end()) {
                 backendProgramIt->second->Use();
                 auto backendProgramId = backendProgramIt->second->GetBackendProgramId();
                 // Global UBO
                 if (currentProgram->GetUBOSize() > 0) {
+#ifdef TRACY_ENABLE
+                    ZoneScopedNC("UpdateGlobalUBO", TRACY_ZONECOLOR_BACKEND);
+#endif
                     MG_External::GLES::glBindBuffer(GL_UNIFORM_BUFFER,
                                                     backendProgramIt->second->GetBackendGlobalUBOId());
                     MG_External::GLES::glBufferSubData(GL_UNIFORM_BUFFER, 0, currentProgram->GetUBOSize(),
@@ -404,67 +515,79 @@ namespace MobileGL::MG_Backend::DirectGLES {
                     MG_External::GLES::glBindBufferBase(GL_UNIFORM_BUFFER, 0,
                                                         backendProgramIt->second->GetBackendGlobalUBOId());
                 }
-                // Normal UBO
-                auto uboCount = currentProgram->GetActiveUniformBlocksCount();
-                Uint lastUBOBinding = 0; // to prevent overlapping bindings between global UBO and normal UBOs
-                for (Int i = 0; i < uboCount; ++i) {
-                    ++lastUBOBinding;
-                    // program state binding index == backend binding index
 
-                    // Connect program ubo index to backend binding point
-                    auto binding = currentProgram->GetUniformBlockBinding(i);
-                    auto& name = currentProgram->GetUniformBlockName(i);
-                    GLuint backendBlkIdx = MG_External::GLES::glGetUniformBlockIndex(backendProgramId, name.c_str());
-                    MG_External::GLES::glUniformBlockBinding(backendProgramId, backendBlkIdx, lastUBOBinding);
+                {
+#ifdef TRACY_ENABLE
+                    ZoneScopedNC("UpdateUBO", TRACY_ZONECOLOR_BACKEND);
+#endif
+                    // Normal UBO
+                    auto uboCount = currentProgram->GetActiveUniformBlocksCount();
+                    Uint lastUBOBinding = 0; // to prevent overlapping bindings between global UBO and normal UBOs
+                    for (Int i = 0; i < uboCount; ++i) {
+                        ++lastUBOBinding;
+                        // program state binding index == backend binding index
 
-                    // Connect buffer to backend binding point
-                    auto& point = MG_State::pGLContext->GetBufferBindingPoint(BufferTarget::Uniform, binding);
-                    auto bufferObj = point.GetBoundObject();
-                    auto range = point.GetRange();
+                        // Connect program ubo index to backend binding point
+                        auto binding = currentProgram->GetUniformBlockBinding(i);
+                        auto& name = currentProgram->GetUniformBlockName(i);
+                        GLuint backendBlkIdx =
+                            MG_External::GLES::glGetUniformBlockIndex(backendProgramId, name.c_str());
+                        MG_External::GLES::glUniformBlockBinding(backendProgramId, backendBlkIdx, lastUBOBinding);
 
-                    if (bufferObj) {
-                        const auto& backendBufferIt = BufferImpl::g_backendBufferObjects.find(bufferObj);
-                        if (backendBufferIt != BufferImpl::g_backendBufferObjects.end()) {
-                            const auto& backendBufferObject = backendBufferIt->second;
-                            backendBufferObject->Bind(GL_UNIFORM_BUFFER);
-                            if (range.end == 0) {
-                                MG_External::GLES::glBindBufferBase(GL_UNIFORM_BUFFER, lastUBOBinding,
-                                                                    backendBufferObject->GetBackendBufferId());
+                        // Connect buffer to backend binding point
+                        auto& point = MG_State::pGLContext->GetBufferBindingPoint(BufferTarget::Uniform, binding);
+                        auto bufferObj = point.GetBoundObject();
+                        auto range = point.GetRange();
+
+                        if (bufferObj) {
+                            const auto& backendBufferIt = BufferImpl::g_backendBufferObjects.find(bufferObj);
+                            if (backendBufferIt != BufferImpl::g_backendBufferObjects.end()) {
+                                const auto& backendBufferObject = backendBufferIt->second;
+                                backendBufferObject->Bind(GL_UNIFORM_BUFFER);
+                                if (range.end == 0) {
+                                    MG_External::GLES::glBindBufferBase(GL_UNIFORM_BUFFER, lastUBOBinding,
+                                                                        backendBufferObject->GetBackendBufferId());
+                                } else {
+                                    MG_External::GLES::glBindBufferRange(GL_UNIFORM_BUFFER, lastUBOBinding,
+                                                                         backendBufferObject->GetBackendBufferId(),
+                                                                         range.start, range.end - range.start);
+                                }
                             } else {
-                                MG_External::GLES::glBindBufferRange(GL_UNIFORM_BUFFER, lastUBOBinding,
-                                                                     backendBufferObject->GetBackendBufferId(),
-                                                                     range.start, range.end - range.start);
+                                MGLOG_E("No backend buffer found for UBO binding, cannot bind UBO.");
                             }
-                        } else {
-                            MGLOG_E("No backend buffer found for UBO binding, cannot bind UBO.");
                         }
                     }
                 }
 
-                // Sampler unit binding
-                auto maxUniformLoc = currentProgram->GetMaxUniformLocation();
-                for (int loc = 0; loc < maxUniformLoc; ++loc) {
-                    auto unit = currentProgram->GetUniformSamplerOrImageUnitIndex(loc);
-                    if (unit == -1) continue;
-                    auto& name = currentProgram->GetUniformName(loc);
-                    auto locAtBackend = MG_External::GLES::glGetUniformLocation(
-                        backendProgramIt->second->GetBackendProgramId(), name.c_str());
-                    MG_External::GLES::glUniform1i(locAtBackend, unit);
+                {
+#ifdef TRACY_ENABLE
+                    ZoneScopedNC("BindSamplerUnit", TRACY_ZONECOLOR_BACKEND);
+#endif
+                    // Sampler unit binding
+                    auto maxUniformLoc = currentProgram->GetMaxUniformLocation();
+                    for (int loc = 0; loc < maxUniformLoc; ++loc) {
+                        auto unit = currentProgram->GetUniformSamplerOrImageUnitIndex(loc);
+                        if (unit == -1) continue;
+                        auto& name = currentProgram->GetUniformName(loc);
+                        auto locAtBackend = MG_External::GLES::glGetUniformLocation(
+                            backendProgramIt->second->GetBackendProgramId(), name.c_str());
+                        MG_External::GLES::glUniform1i(locAtBackend, unit);
 
-                    auto samplerObject = MG_State::pGLContext->GetTextureUnitObject(unit).GetSamplerObject();
+                        auto samplerObject = MG_State::pGLContext->GetTextureUnitObject(unit).GetSamplerObject();
 
-                    if (samplerObject) {
-                        const auto& backendSamplerIt = SamplerImpl::g_backendSamplerObjects.find(samplerObject);
-                        SharedPtr<SamplerImpl::BackendSamplerObject> backendSamplerObject;
-                        if (backendSamplerIt == SamplerImpl::g_backendSamplerObjects.end()) {
-                            backendSamplerObject = MakeShared<SamplerImpl::BackendSamplerObject>();
-                            SamplerImpl::g_backendSamplerObjects[samplerObject] = backendSamplerObject;
+                        if (samplerObject) {
+                            const auto& backendSamplerIt = SamplerImpl::g_backendSamplerObjects.find(samplerObject);
+                            SharedPtr<SamplerImpl::BackendSamplerObject> backendSamplerObject;
+                            if (backendSamplerIt == SamplerImpl::g_backendSamplerObjects.end()) {
+                                backendSamplerObject = MakeShared<SamplerImpl::BackendSamplerObject>();
+                                SamplerImpl::g_backendSamplerObjects[samplerObject] = backendSamplerObject;
+                            } else {
+                                backendSamplerObject = backendSamplerIt->second;
+                            }
+                            backendSamplerObject->SyncToBackend(samplerObject);
                         } else {
-                            backendSamplerObject = backendSamplerIt->second;
+                            MG_External::GLES::glBindSampler(unit, 0);
                         }
-                        backendSamplerObject->SyncToBackend(samplerObject);
-                    } else {
-                        MG_External::GLES::glBindSampler(unit, 0);
                     }
                 }
             } else {
@@ -474,17 +597,10 @@ namespace MobileGL::MG_Backend::DirectGLES {
         }
     }
 
-    void DrawArrays(GLenum mode, GLint first, GLsizei count) {
-        PrepareForDraw();
-        MG_External::GLES::glDrawArrays(mode, first, count);
-    }
-
-    void DrawElements(GLenum mode, GLsizei count, GLenum type, const void* indices) {
-        PrepareForDraw();
-        MG_External::GLES::glDrawElements(mode, count, type, indices);
-    }
-
     void Clear(GLbitfield mask) {
+#if MOBILEGL_LOG_ACTIVE_LEVEL <= MOBILEGL_LOG_LEVEL_DEBUG && MOBILEGL_ENABLE_SCOPE_MARKER
+        DebugImpl::OpenGLScopeMarker marker(__func__);
+#endif
         TextureImpl::SyncNeccessaryTextures();
         FramebufferImpl::SyncCurrentFBO();
         RenderStateImpl::SyncRenderState();
@@ -494,29 +610,154 @@ namespace MobileGL::MG_Backend::DirectGLES {
         MG_External::GLES::glClear(mask);
     }
 
-    void DrawElementsBaseVertex(GLenum mode, GLsizei count, GLenum type, const void* indices, GLint baseVertex) {
-        PrepareForDraw();
-        MG_External::GLES::glDrawElementsBaseVertex(mode, count, type, indices, baseVertex);
+    void DrawElements(GLenum mode, GLsizei count, GLenum type, const void* indices) {
+#if MOBILEGL_LOG_ACTIVE_LEVEL <= MOBILEGL_LOG_LEVEL_DEBUG && MOBILEGL_ENABLE_SCOPE_MARKER
+        DebugImpl::OpenGLScopeMarker marker(__func__);
+#endif
+        DrawSyncBit syncBit = DrawSyncBit::IndexBuffer;
+        PrepareForDraw(syncBit);
+        MG_External::GLES::glDrawElements(mode, count, type, indices);
     }
 
-    void MultiDrawElements(GLenum mode, const GLsizei* counts, GLenum type, const void* const* indices,
+    void DrawArrays(GLenum mode, GLint first, GLsizei count) {
+#if MOBILEGL_LOG_ACTIVE_LEVEL <= MOBILEGL_LOG_LEVEL_DEBUG && MOBILEGL_ENABLE_SCOPE_MARKER
+        DebugImpl::OpenGLScopeMarker marker(__func__);
+#endif
+        DrawSyncBit syncBit = DrawSyncBit::None;
+        PrepareForDraw(syncBit);
+        MG_External::GLES::glDrawArrays(mode, first, count);
+    }
+
+    void DrawElementsBaseVertex(GLenum mode, GLsizei count, GLenum type, const GLvoid* indices, GLint basevertex) {
+#if MOBILEGL_LOG_ACTIVE_LEVEL <= MOBILEGL_LOG_LEVEL_DEBUG && MOBILEGL_ENABLE_SCOPE_MARKER
+        DebugImpl::OpenGLScopeMarker marker(__func__);
+#endif
+        DrawSyncBit syncBit = DrawSyncBit::IndexBuffer;
+        PrepareForDraw(syncBit);
+        MG_External::GLES::glDrawElementsBaseVertex(mode, count, type, indices, basevertex);
+    }
+
+    void MultiDrawElements(GLenum mode, const GLsizei* count, GLenum type, const GLvoid* const* indices,
                            GLsizei drawcount) {
-        PrepareForDraw();
+#if MOBILEGL_LOG_ACTIVE_LEVEL <= MOBILEGL_LOG_LEVEL_DEBUG && MOBILEGL_ENABLE_SCOPE_MARKER
+        DebugImpl::OpenGLScopeMarker marker(__func__);
+#endif
+        DrawSyncBit syncBit = DrawSyncBit::IndexBuffer;
+        PrepareForDraw(syncBit);
+
         for (GLsizei i = 0; i < drawcount; ++i) {
-            MG_External::GLES::glDrawElements(mode, counts[i], type, indices[i]);
+            MG_External::GLES::glDrawElements(mode, count[i], type, indices[i]);
         }
     }
 
-    void MultiDrawElementsBaseVertex(GLenum mode, const GLsizei* counts, GLenum type, const void* const* indices,
-                                     GLsizei drawcount, const GLint* baseVertices) {
-        PrepareForDraw();
+    void MultiDrawElementsBaseVertex(GLenum mode, const GLsizei* count, GLenum type, const GLvoid* const* indices,
+                                     GLsizei drawcount, const GLint* basevertex) {
+#if MOBILEGL_LOG_ACTIVE_LEVEL <= MOBILEGL_LOG_LEVEL_DEBUG && MOBILEGL_ENABLE_SCOPE_MARKER
+        DebugImpl::OpenGLScopeMarker marker(__func__);
+#endif
+        DrawSyncBit syncBit = DrawSyncBit::IndexBuffer;
+        PrepareForDraw(syncBit);
+
         for (GLsizei i = 0; i < drawcount; ++i) {
-            MG_External::GLES::glDrawElementsBaseVertex(mode, counts[i], type, indices[i], baseVertices[i]);
+            MG_External::GLES::glDrawElementsBaseVertex(mode, count[i], type, indices[i], basevertex[i]);
         }
+    }
+
+    void MultiDrawElementsIndirect(GLenum mode, GLenum type, const void* indirect, GLsizei drawcount, GLsizei stride) {
+#if MOBILEGL_LOG_ACTIVE_LEVEL <= MOBILEGL_LOG_LEVEL_DEBUG && MOBILEGL_ENABLE_SCOPE_MARKER
+        DebugImpl::OpenGLScopeMarker marker(__func__);
+#endif
+        DrawSyncBit syncBit = DrawSyncBit::IndexBuffer | DrawSyncBit::IndirectBuffer;
+        PrepareForDraw(syncBit);
+
+        for (GLsizei i = 0; i < drawcount; ++i) {
+            const GLvoid* cmd = reinterpret_cast<const GLvoid*>(reinterpret_cast<const uint8_t*>(indirect) +
+                                                                i * (stride ? stride : sizeof(GLsizei) * 4));
+            MG_External::GLES::glDrawElementsIndirect(mode, type, cmd);
+        }
+    }
+
+    void MultiDrawArraysIndirect(GLenum mode, const void* indirect, GLsizei drawcount, GLsizei stride) {
+#if MOBILEGL_LOG_ACTIVE_LEVEL <= MOBILEGL_LOG_LEVEL_DEBUG && MOBILEGL_ENABLE_SCOPE_MARKER
+        DebugImpl::OpenGLScopeMarker marker(__func__);
+#endif
+        DrawSyncBit syncBit = DrawSyncBit::IndirectBuffer;
+        PrepareForDraw(syncBit);
+
+        for (GLsizei i = 0; i < drawcount; ++i) {
+            const GLvoid* cmd = reinterpret_cast<const GLvoid*>(reinterpret_cast<const uint8_t*>(indirect) +
+                                                                i * (stride ? stride : sizeof(GLsizei) * 4));
+            MG_External::GLES::glDrawArraysIndirect(mode, cmd);
+        }
+    }
+
+    void DrawRangeElementsBaseVertex(GLenum mode, GLuint start, GLuint end, GLsizei count, GLenum type,
+                                     const void* indices, GLint basevertex) {
+        DrawSyncBit syncBit = DrawSyncBit::IndexBuffer;
+        PrepareForDraw(syncBit);
+        MG_External::GLES::glDrawRangeElementsBaseVertex(mode, start, end, count, type, indices, basevertex);
+    }
+
+    void DrawRangeElements(GLenum mode, GLuint start, GLuint end, GLsizei count, GLenum type, const void* indices) {
+        DrawSyncBit syncBit = DrawSyncBit::IndexBuffer;
+        PrepareForDraw(syncBit);
+        MG_External::GLES::glDrawRangeElements(mode, start, end, count, type, indices);
+    }
+
+    void DrawElementsInstancedBaseVertexBaseInstance(GLenum mode, GLsizei count, GLenum type, const void* indices,
+                                                     GLsizei instancecount, GLint basevertex, GLuint baseinstance) {
+        // Not supported in OpenGL ES
+        MGLOG_W("DrawElementsInstancedBaseVertexBaseInstance is not supported in OpenGL ES.");
+    }
+
+    void DrawElementsInstancedBaseVertex(GLenum mode, GLsizei count, GLenum type, const void* indices,
+                                         GLsizei instancecount, GLint basevertex) {
+        DrawSyncBit syncBit = DrawSyncBit::IndexBuffer | DrawSyncBit::Instancing;
+        PrepareForDraw(syncBit);
+        MG_External::GLES::glDrawElementsInstancedBaseVertex(mode, count, type, indices, instancecount, basevertex);
+    }
+
+    void DrawElementsInstancedBaseInstance(GLenum mode, GLsizei count, GLenum type, const void* indices,
+                                           GLsizei instancecount, GLuint baseinstance) {
+        // Not supported in OpenGL ES
+        MGLOG_W("DrawElementsInstancedBaseInstance is not supported in OpenGL ES.");
+    }
+
+    void DrawElementsInstanced(GLenum mode, GLsizei count, GLenum type, const void* indices, GLsizei instancecount) {
+        DrawSyncBit syncBit = DrawSyncBit::IndexBuffer | DrawSyncBit::Instancing;
+        PrepareForDraw(syncBit);
+        MG_External::GLES::glDrawElementsInstanced(mode, count, type, indices, instancecount);
+    }
+
+    void DrawElementsIndirect(GLenum mode, GLenum type, const void* indirect) {
+        DrawSyncBit syncBit = DrawSyncBit::IndexBuffer | DrawSyncBit::IndirectBuffer;
+        PrepareForDraw(syncBit);
+        MG_External::GLES::glDrawElementsIndirect(mode, type, indirect);
+    }
+
+    void DrawArraysInstancedBaseInstance(GLenum mode, GLint first, GLsizei count, GLsizei instancecount,
+                                         GLuint baseinstance) {
+        // Not supported in OpenGL ES
+        MGLOG_W("DrawArraysInstancedBaseInstance is not supported in OpenGL ES.");
+    }
+
+    void DrawArraysInstanced(GLenum mode, GLint first, GLsizei count, GLsizei instancecount) {
+        DrawSyncBit syncBit = DrawSyncBit::Instancing;
+        PrepareForDraw(syncBit);
+        MG_External::GLES::glDrawArraysInstanced(mode, first, count, instancecount);
+    }
+
+    void DrawArraysIndirect(GLenum mode, const void* indirect) {
+        DrawSyncBit syncBit = DrawSyncBit::IndirectBuffer;
+        PrepareForDraw(syncBit);
+        MG_External::GLES::glDrawArraysIndirect(mode, indirect);
     }
 
     void BlitFramebuffer(GLint srcX0, GLint srcY0, GLint srcX1, GLint srcY1, GLint dstX0, GLint dstY0, GLint dstX1,
                          GLint dstY1, GLbitfield mask, GLenum filter) {
+#if MOBILEGL_LOG_ACTIVE_LEVEL <= MOBILEGL_LOG_LEVEL_DEBUG && MOBILEGL_ENABLE_SCOPE_MARKER
+        DebugImpl::OpenGLScopeMarker marker(__func__);
+#endif
         DebugImpl::ErrorLopper errorLopper;
 
         TextureImpl::SyncNeccessaryTextures();
@@ -537,14 +778,55 @@ namespace MobileGL::MG_Backend::DirectGLES {
         errorLopper.Loop([file = __FILE__, line = __LINE__](auto err) {
             MGLOG_D("ES error (%s:%d): %s", file, line, MG_Util::ConvertGLEnumToString(err).c_str());
         });
+        MGLOG_D("ES %s(%d, %d, %d, %d, %d, %d, %d, %d, 0x%x, %s)", __func__, srcX0, srcY0, srcX1, srcY1, dstX0, dstY0, dstX1, dstY1, mask,
+                MG_Util::ConvertGLEnumToString(filter).c_str());
         MG_External::GLES::glBlitFramebuffer(srcX0, srcY0, srcX1, srcY1, dstX0, dstY0, dstX1, dstY1, mask, filter);
         errorLopper.Loop([file = __FILE__, line = __LINE__](auto err) {
             MGLOG_D("ES error (%s:%d): %s", file, line, MG_Util::ConvertGLEnumToString(err).c_str());
         });
     }
 
+    bool UpdateTextureBindingAtTarget(GLenum target) {
+#ifdef TRACY_ENABLE
+        ZoneScopedNC(__func__, TRACY_ZONECOLOR_BACKEND);
+#endif
+        auto unit = MG_State::pGLContext->GetActiveTextureUnit();
+        auto& textureUnit = MG_State::pGLContext->GetTextureUnitObject(unit);
+
+        MG_External::GLES::glActiveTexture(GL_TEXTURE0 + unit);
+        auto textureTarget = MG_Util::ConvertGLEnumToTextureTarget(target);
+        if (!TextureImpl::IsSupportedTextureTarget(textureTarget)) {
+            MOBILEGL_ASSERT(false, "    Texture target %s is not supported, skipping.",
+                            MG_Util::ConvertTextureTargetToString(textureTarget).c_str());
+            return false;
+        }
+
+        const auto& bindingSlot = textureUnit.GetBindingSlot(textureTarget);
+        {
+            const auto& textureObject = bindingSlot.GetBoundObject();
+            if (!textureObject) {
+                MGLOG_W("%s: Texture target %s does not have texture bound.", __func__,
+                        MG_Util::ConvertTextureTargetToString(textureTarget).c_str());
+            }
+
+            const auto& backendTextureIt = TextureImpl::g_backendTextureObjects.find(textureObject);
+            SharedPtr<TextureImpl::BackendTextureObject> backendTextureObject;
+            if (backendTextureIt == TextureImpl::g_backendTextureObjects.end()) {
+                backendTextureObject = MakeShared<TextureImpl::BackendTextureObject>();
+                TextureImpl::g_backendTextureObjects[textureObject] = backendTextureObject;
+            } else {
+                backendTextureObject = backendTextureIt->second;
+            }
+            backendTextureObject->Bind(target);
+        }
+        return true;
+    }
+
     void CopyTexImage2D(GLenum target, GLint level, GLenum internalformat, GLint x, GLint y, GLsizei width,
                         GLsizei height, GLint border) {
+#if MOBILEGL_LOG_ACTIVE_LEVEL <= MOBILEGL_LOG_LEVEL_DEBUG
+    DebugImpl::OpenGLScopeMarker marker(__func__);
+#endif
         DebugImpl::ErrorLopper errorLopper;
         MGLOG_D("%s: Backend", __func__);
         TextureImpl::SyncNeccessaryTextures();
@@ -560,17 +842,25 @@ namespace MobileGL::MG_Backend::DirectGLES {
             MGLOG_D("ES error (%s:%d): %s", file, line, MG_Util::ConvertGLEnumToString(err).c_str());
         });
 
-        GLint realInternalFormat;
-        MG_External::GLES::glGetTexLevelParameteriv(target, level, GL_TEXTURE_INTERNAL_FORMAT, &realInternalFormat);
-        errorLopper.Loop([file = __FILE__, line = __LINE__](auto err) {
-            MGLOG_D("ES error (%s:%d): %s", file, line, MG_Util::ConvertGLEnumToString(err).c_str());
-        });
-        internalformat = (GLenum)realInternalFormat;
+        if (!UpdateTextureBindingAtTarget(target))
+            return;
+
+//        GLint realInternalFormat;
+//        MG_External::GLES::glGetTexLevelParameteriv(target, level, GL_TEXTURE_INTERNAL_FORMAT, &realInternalFormat);
+//        errorLopper.Loop([file = __FILE__, line = __LINE__](auto err) {
+//            MGLOG_D("ES error (%s:%d): %s", file, line, MG_Util::ConvertGLEnumToString(err).c_str());
+//        });
+//        internalformat = (GLenum)realInternalFormat;
         auto mglInternalFormat = MG_Util::ConvertGLEnumToTextureInternalFormat(internalformat);
 
         GLenum format = GL_DEPTH_COMPONENT;
         GLenum type = GL_UNSIGNED_INT;
         TextureImpl::GenerateTextureFormatInfo(mglInternalFormat, &internalformat, &format, &type);
+        MOBILEGL_ASSERT(format != GL_NONE && type != GL_NONE, "%s: cannot GenerateTextureFormatInfo(%s): out internalformat=%s, format=%s, type=%s",
+                        MG_Util::ConvertTextureInternalFormatToString(mglInternalFormat).c_str(),
+                        MG_Util::ConvertGLEnumToString(internalformat).c_str(),
+                        MG_Util::ConvertGLEnumToString(format).c_str(),
+                        MG_Util::ConvertGLEnumToString(type).c_str());
         TexturePixelDataType texturePixelDataType = MG_Util::ConvertGLEnumToTexturePixelDataType(type);
 
         bool isDepthFormat =
@@ -587,6 +877,9 @@ namespace MobileGL::MG_Backend::DirectGLES {
             MGLOG_D("%s: Backend depth", __func__);
             MG_External::GLES::glTexImage2D(target, level, (GLint)internalformat, width, height, border, format, type,
                                             nullptr);
+            errorLopper.Loop([file = __FILE__, line = __LINE__](auto err) {
+                MGLOG_D("ES error (%s:%d): %s", file, line, MG_Util::ConvertGLEnumToString(err).c_str());
+            });
             FramebufferImpl::BackendFramebufferBindingProtector drawFboProtector(GL_DRAW_FRAMEBUFFER);
             FramebufferImpl::BackendFramebufferBindingProtector readFboProtector(GL_READ_FRAMEBUFFER);
             errorLopper.Loop([file = __FILE__, line = __LINE__](auto err) {
@@ -608,6 +901,8 @@ namespace MobileGL::MG_Backend::DirectGLES {
             MG_External::GLES::glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, attachment, target, currentTex, level);
 
             if (MG_External::GLES::glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+                MGLOG_E("ES glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE");
+
                 // Protector will automatically revert to previous fbo states
                 return;
             }
@@ -620,19 +915,13 @@ namespace MobileGL::MG_Backend::DirectGLES {
             });
             // Protector will automatically revert to previous fbo states
         }
-
-        // TODO: potential desync between MG_State and backend
-        auto activeUnit = MG_State::pGLContext->GetTextureUnitObject(MG_State::pGLContext->GetActiveTextureUnit());
-        TextureTarget textureTarget = MG_Util::ConvertGLEnumToTextureTarget(target);
-        auto& bindingSlot = activeUnit.GetBindingSlot(textureTarget);
-        auto textureObject = bindingSlot.GetBoundObject();
-
-        textureObject->SetInternalFormat(mglInternalFormat);
-        textureObject->AllocateStorage(TextureUploadTarget::Texture2D, level, {{width, height, 1}, 0});
     }
 
     void CopyTexSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint x, GLint y, GLsizei width,
                            GLsizei height) {
+#if MOBILEGL_LOG_ACTIVE_LEVEL <= MOBILEGL_LOG_LEVEL_DEBUG && MOBILEGL_ENABLE_SCOPE_MARKER
+        DebugImpl::OpenGLScopeMarker marker(__func__);
+#endif
         DebugImpl::ErrorLopper errorLopper;
 
         MGLOG_D("%s: Backend", __func__);
@@ -649,21 +938,8 @@ namespace MobileGL::MG_Backend::DirectGLES {
             MGLOG_D("ES error (%s:%d): %s", file, line, MG_Util::ConvertGLEnumToString(err).c_str());
         });
 
-        Int unit = MG_State::pGLContext->GetActiveTextureUnit();
-        auto& activeUnit = MG_State::pGLContext->GetTextureUnitObject(unit);
-        TextureTarget textureTarget = MG_Util::ConvertGLEnumToTextureTarget(target);
-        auto& bindingSlot = activeUnit.GetBindingSlot(textureTarget);
-        const auto& textureObject = bindingSlot.GetBoundObject();
-
-        const auto& backendTextureIt = TextureImpl::g_backendTextureObjects.find(textureObject);
-        SharedPtr<TextureImpl::BackendTextureObject> backendTextureObject;
-        if (backendTextureIt == TextureImpl::g_backendTextureObjects.end()) {
-            backendTextureObject = MakeShared<TextureImpl::BackendTextureObject>();
-            TextureImpl::g_backendTextureObjects[textureObject] = backendTextureObject;
-        } else {
-            backendTextureObject = backendTextureIt->second;
-        }
-        backendTextureObject->Bind(target);
+        if (!UpdateTextureBindingAtTarget(target))
+            return;
 
         BindCurrentFBO(FramebufferTarget::Read);
         errorLopper.Loop([file = __FILE__, line = __LINE__](auto err) {
@@ -706,6 +982,8 @@ namespace MobileGL::MG_Backend::DirectGLES {
                 MGLOG_D("ES error (%s:%d): %s", file, line, MG_Util::ConvertGLEnumToString(err).c_str());
             });
             if (MG_External::GLES::glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+                MGLOG_E("ES glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE");
+
                 // Protector will automatically revert to previous fbo states
                 return;
             }
@@ -721,6 +999,9 @@ namespace MobileGL::MG_Backend::DirectGLES {
     }
 
     void GenerateMipmap(GLenum target) {
+#if MOBILEGL_LOG_ACTIVE_LEVEL <= MOBILEGL_LOG_LEVEL_DEBUG && MOBILEGL_ENABLE_SCOPE_MARKER
+        DebugImpl::OpenGLScopeMarker marker(__func__);
+#endif
         auto unitIndex = MG_State::pGLContext->GetActiveTextureUnit();
         auto& unit = MG_State::pGLContext->GetTextureUnitObject(unitIndex);
         auto& slot = unit.GetBindingSlot(MG_Util::ConvertGLEnumToTextureTarget(target));
@@ -735,4 +1016,175 @@ namespace MobileGL::MG_Backend::DirectGLES {
     const GLubyte* GetString(GLenum name) {
         return MG_External::GLES::glGetString(name);
     }
+
+    void ClearBufferfi(GLenum buffer, GLint drawbuffer, GLfloat depth, GLint stencil) {
+        TextureImpl::SyncNeccessaryTextures();
+        FramebufferImpl::SyncCurrentFBO();
+        RenderStateImpl::SyncRenderState();
+
+        BindCurrentFBO(FramebufferTarget::Draw);
+
+        MG_External::GLES::glClearBufferfi(buffer, drawbuffer, depth, stencil);
+    }
+
+    void ClearBufferfv(GLenum buffer, GLint drawbuffer, const GLfloat* value) {
+        TextureImpl::SyncNeccessaryTextures();
+        FramebufferImpl::SyncCurrentFBO();
+        RenderStateImpl::SyncRenderState();
+
+        BindCurrentFBO(FramebufferTarget::Draw);
+        auto backendFBOIt = FramebufferImpl::g_backendFramebufferObjects.find(
+            MG_State::pGLContext->GetFramebufferBindingSlot(FramebufferTarget::Draw).GetBoundObject());
+        if (backendFBOIt == FramebufferImpl::g_backendFramebufferObjects.end()) {
+            MGLOG_E("No backend FBO found for current draw FBO, cannot clear buffer.");
+            return;
+        }
+        auto backendFBO = backendFBOIt->second;
+
+        GLint realDrawbuffer = drawbuffer;
+
+        if (buffer == GL_COLOR) {
+            auto& stateDrawBuffers = backendFBOIt->first->GetDrawBuffers();
+
+            if (drawbuffer < 0 || drawbuffer >= MG_State::GLState::FramebufferObject::MAX_DRAW_BUFFERS) {
+                MGLOG_E("Invalid drawbuffer index: %d", drawbuffer);
+                return;
+            }
+
+            FramebufferAttachmentType attachmentType = stateDrawBuffers[drawbuffer];
+
+            if (attachmentType == FramebufferAttachmentType::None) {
+                MGLOG_D("Drawbuffer %d has no attachment, skipping clear", drawbuffer);
+                return;
+            }
+
+            bool found = false;
+            for (int i = 0; i < MG_State::GLState::FramebufferObject::MAX_DRAW_BUFFERS; i++) {
+                if (backendFBO->GetCompactedAttachmentTypeAtDrawBufferIndex(i) == attachmentType) {
+                    realDrawbuffer = i;
+                    found = true;
+                    break;
+                }
+            }
+
+            if (!found) {
+                MGLOG_E("Failed to find backend drawbuffer for attachment type: %d", static_cast<int>(attachmentType));
+                return;
+            }
+        } else if (buffer == GL_DEPTH || buffer == GL_STENCIL) {
+            if (drawbuffer != 0) {
+                MGLOG_W("Depth/stencil clear buffer index must be 0, got %d. Using 0.", drawbuffer);
+            }
+            realDrawbuffer = 0;
+        }
+
+        MG_External::GLES::glClearBufferfv(buffer, realDrawbuffer, value);
+    }
+    void ClearBufferiv(GLenum buffer, GLint drawbuffer, const GLint* value) {
+        TextureImpl::SyncNeccessaryTextures();
+        FramebufferImpl::SyncCurrentFBO();
+        RenderStateImpl::SyncRenderState();
+
+        BindCurrentFBO(FramebufferTarget::Draw);
+        auto backendFBOIt = FramebufferImpl::g_backendFramebufferObjects.find(
+            MG_State::pGLContext->GetFramebufferBindingSlot(FramebufferTarget::Draw).GetBoundObject());
+        if (backendFBOIt == FramebufferImpl::g_backendFramebufferObjects.end()) {
+            MGLOG_E("No backend FBO found for current draw FBO, cannot clear buffer.");
+            return;
+        }
+        auto backendFBO = backendFBOIt->second;
+
+        GLint realDrawbuffer = drawbuffer;
+
+        if (buffer == GL_COLOR) {
+            auto& stateDrawBuffers = backendFBOIt->first->GetDrawBuffers();
+
+            if (drawbuffer < 0 || drawbuffer >= MG_State::GLState::FramebufferObject::MAX_DRAW_BUFFERS) {
+                MGLOG_E("Invalid drawbuffer index: %d", drawbuffer);
+                return;
+            }
+
+            FramebufferAttachmentType attachmentType = stateDrawBuffers[drawbuffer];
+
+            if (attachmentType == FramebufferAttachmentType::None) {
+                MGLOG_D("Drawbuffer %d has no attachment, skipping clear", drawbuffer);
+                return;
+            }
+
+            bool found = false;
+            for (int i = 0; i < MG_State::GLState::FramebufferObject::MAX_DRAW_BUFFERS; i++) {
+                if (backendFBO->GetCompactedAttachmentTypeAtDrawBufferIndex(i) == attachmentType) {
+                    realDrawbuffer = i;
+                    found = true;
+                    break;
+                }
+            }
+
+            if (!found) {
+                MGLOG_E("Failed to find backend drawbuffer for attachment type: %d", static_cast<int>(attachmentType));
+                return;
+            }
+        } else if (buffer == GL_STENCIL) {
+            if (drawbuffer != 0) {
+                MGLOG_W("Stencil clear buffer index must be 0, got %d. Using 0.", drawbuffer);
+            }
+            realDrawbuffer = 0;
+        }
+
+        MG_External::GLES::glClearBufferiv(buffer, realDrawbuffer, value);
+    }
+
+    void ClearBufferuiv(GLenum buffer, GLint drawbuffer, const GLuint* value) {
+        TextureImpl::SyncNeccessaryTextures();
+        FramebufferImpl::SyncCurrentFBO();
+        RenderStateImpl::SyncRenderState();
+
+        BindCurrentFBO(FramebufferTarget::Draw);
+        auto backendFBOIt = FramebufferImpl::g_backendFramebufferObjects.find(
+            MG_State::pGLContext->GetFramebufferBindingSlot(FramebufferTarget::Draw).GetBoundObject());
+        if (backendFBOIt == FramebufferImpl::g_backendFramebufferObjects.end()) {
+            MGLOG_E("No backend FBO found for current draw FBO, cannot clear buffer.");
+            return;
+        }
+        auto backendFBO = backendFBOIt->second;
+
+        GLint realDrawbuffer = drawbuffer;
+
+        if (buffer == GL_COLOR) {
+            auto& stateDrawBuffers = backendFBOIt->first->GetDrawBuffers();
+
+            if (drawbuffer < 0 || drawbuffer >= MG_State::GLState::FramebufferObject::MAX_DRAW_BUFFERS) {
+                MGLOG_E("Invalid drawbuffer index: %d", drawbuffer);
+                return;
+            }
+
+            FramebufferAttachmentType attachmentType = stateDrawBuffers[drawbuffer];
+
+            if (attachmentType == FramebufferAttachmentType::None) {
+                MGLOG_D("Drawbuffer %d has no attachment, skipping clear", drawbuffer);
+                return;
+            }
+
+            bool found = false;
+            for (int i = 0; i < MG_State::GLState::FramebufferObject::MAX_DRAW_BUFFERS; i++) {
+                if (backendFBO->GetCompactedAttachmentTypeAtDrawBufferIndex(i) == attachmentType) {
+                    realDrawbuffer = i;
+                    found = true;
+                    break;
+                }
+            }
+
+            if (!found) {
+                MGLOG_E("Failed to find backend drawbuffer for attachment type: %d", static_cast<int>(attachmentType));
+                return;
+            }
+        } else {
+            MGLOG_E("ClearBufferuiv can only be used with GL_COLOR buffer, got %s",
+                    MG_Util::ConvertGLEnumToString(buffer).c_str());
+            return;
+        }
+
+        MG_External::GLES::glClearBufferuiv(buffer, realDrawbuffer, value);
+    }
+
 } // namespace MobileGL::MG_Backend::DirectGLES

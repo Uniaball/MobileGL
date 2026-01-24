@@ -1,7 +1,17 @@
+// MobileGL - MobileGL/MG_Backend/DirectGLES/Utils.cpp
+// Copyright (c) 2025-2026 MobileGL-Dev
+// Licensed under the GNU Lesser General Public License v3.0:
+//   https://www.gnu.org/licenses/gpl-3.0.txt
+//   https://www.gnu.org/licenses/lgpl-3.0.txt
+// SPDX-License-Identifier: LGPL-3.0-only
+// End of Source File Header
+
 #include "DirectGLES.h"
 #include "Utils.h"
 #include "Managers.h"
 #include "MG_Util/Converters/GLToMG/FramebufferEnumConverter.h"
+#include "MG_Util/Texture/TextureFormatProcessor.h"
+
 #include <MG_State/GLState/Core.h>
 #include <MG_Util/BackendLoaders/OpenGL/Loader.h>
 #include <MG_Util/Converters/GLToStr/GLEnumConverter.h>
@@ -11,376 +21,89 @@
 namespace MobileGL::MG_Backend::DirectGLES {
     namespace BufferImpl {
         BackendBufferBindingProtector::BackendBufferBindingProtector(GLenum target) {
+#ifdef TRACY_ENABLE
+            ZoneScopedC(TRACY_ZONECOLOR_BACKEND);
+#endif
             m_target = target;
             MG_External::GLES::glGetIntegerv(Utils::GetBindingQuery(target, false), &m_previousBinding);
         }
 
         BackendBufferBindingProtector::~BackendBufferBindingProtector() {
+#ifdef TRACY_ENABLE
+            ZoneScopedC(TRACY_ZONECOLOR_BACKEND);
+#endif
             MG_External::GLES::glBindBuffer(m_target, m_previousBinding);
         }
     } // namespace BufferImpl
 
     namespace VertexArrayImpl {
         BackendVertexArrayBindingProtector::BackendVertexArrayBindingProtector() {
+#ifdef TRACY_ENABLE
+            ZoneScopedC(TRACY_ZONECOLOR_BACKEND);
+#endif
             MG_External::GLES::glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &m_previousBinding);
         }
 
         BackendVertexArrayBindingProtector::~BackendVertexArrayBindingProtector() {
+#ifdef TRACY_ENABLE
+            ZoneScopedC(TRACY_ZONECOLOR_BACKEND);
+#endif
             MG_External::GLES::glBindVertexArray(m_previousBinding);
         }
     } // namespace VertexArrayImpl
 
     namespace TextureImpl {
         BackendTextureBindingProtector::BackendTextureBindingProtector(GLenum target) {
+#ifdef TRACY_ENABLE
+            ZoneScopedC(TRACY_ZONECOLOR_BACKEND);
+#endif
             m_target = target;
             MG_External::GLES::glGetIntegerv(Utils::GetBindingQuery(target, true), &m_previousBinding);
         }
 
         BackendTextureBindingProtector::~BackendTextureBindingProtector() {
+#ifdef TRACY_ENABLE
+            ZoneScopedC(TRACY_ZONECOLOR_BACKEND);
+#endif
             MG_External::GLES::glBindTexture(m_target, m_previousBinding);
         }
 
-        void NormalizePixelFormat(GLenum internalFormat, GLenum* outInternalFormat, GLenum* outType,
-                                  GLenum* outFormat) {
-            switch (internalFormat) {
-            case GL_DEPTH_COMPONENT16:
-                if (outInternalFormat) *outInternalFormat = internalFormat;
-                if (outType) *outType = GL_UNSIGNED_SHORT;
-                if (outFormat) *outFormat = GL_DEPTH_COMPONENT;
-                break;
-
-            case GL_DEPTH_COMPONENT24:
-                if (outInternalFormat) *outInternalFormat = internalFormat;
-                if (outType) *outType = GL_UNSIGNED_INT;
-                if (outFormat) *outFormat = GL_DEPTH_COMPONENT;
-                break;
-
-            case GL_DEPTH_COMPONENT32:
-                if (outInternalFormat) *outInternalFormat = GL_DEPTH_COMPONENT32F;
-                if (outType) *outType = GL_FLOAT;
-                if (outFormat) *outFormat = GL_DEPTH_COMPONENT;
-                break;
-
-            case GL_DEPTH_COMPONENT32F:
-                if (outInternalFormat) *outInternalFormat = internalFormat;
-                if (outType) *outType = GL_FLOAT;
-                if (outFormat) *outFormat = GL_DEPTH_COMPONENT;
-                break;
-
-            case GL_DEPTH_COMPONENT:
-                if (outInternalFormat) *outInternalFormat = internalFormat;
-                if (outType) *outType = GL_UNSIGNED_INT;
-                if (outFormat) *outFormat = GL_DEPTH_COMPONENT;
-                break;
-            case GL_DEPTH32F_STENCIL8:
-            case GL_DEPTH_STENCIL:
-                if (outInternalFormat) *outInternalFormat = GL_DEPTH32F_STENCIL8;
-                if (outType) *outType = GL_FLOAT_32_UNSIGNED_INT_24_8_REV;
-                if (outFormat) *outFormat = GL_DEPTH_STENCIL;
-                break;
-
-            case GL_RGB10_A2:
-                if (outInternalFormat) *outInternalFormat = internalFormat;
-                if (outType) *outType = GL_UNSIGNED_INT_2_10_10_10_REV;
-                if (outFormat) *outFormat = GL_RGBA;
-                break;
-
-            case GL_RGB5_A1:
-                if (outInternalFormat) *outInternalFormat = internalFormat;
-                if (outType) *outType = GL_UNSIGNED_SHORT_5_5_5_1;
-                if (outFormat) *outFormat = GL_RGBA;
-                break;
-
-            case GL_COMPRESSED_RED_RGTC1:
-            case GL_COMPRESSED_RG_RGTC2:
-                break;
-
-            case GL_SRGB8:
-                if (outInternalFormat) *outInternalFormat = internalFormat;
-                if (outType) *outType = GL_UNSIGNED_BYTE;
-                if (outFormat) *outFormat = GL_RGB;
-                break;
-
-            case GL_RGBA32F:
-            case GL_RGB32F:
-            case GL_RG32F:
-            case GL_R32F:
-                if (outInternalFormat) *outInternalFormat = internalFormat;
-                if (outType) *outType = GL_FLOAT;
-                if (outFormat) switch (internalFormat) {
-                    case GL_RGBA32F:
-                        if (outFormat) *outFormat = GL_RGBA;
-                        break;
-                    case GL_RGB32F:
-                        if (outFormat) *outFormat = GL_RGB;
-                        break;
-                    case GL_RG32F:
-                        if (outFormat) *outFormat = GL_RG;
-                        break;
-                    case GL_R32F:
-                        if (outFormat) *outFormat = GL_RED;
-                        break;
-                    }
-                break;
-
-            case GL_RGB9_E5:
-                if (outInternalFormat) *outInternalFormat = internalFormat;
-                if (outType) *outType = GL_UNSIGNED_INT_5_9_9_9_REV;
-                if (outFormat) *outFormat = GL_RGB;
-                break;
-
-            case GL_R11F_G11F_B10F:
-                if (outInternalFormat) *outInternalFormat = internalFormat;
-                if (outType) *outType = GL_UNSIGNED_INT_10F_11F_11F_REV;
-                if (outFormat) *outFormat = GL_RGB;
-                break;
-
-            case GL_RGBA32UI:
-            case GL_RGB32UI:
-            case GL_RG32UI:
-            case GL_R32UI:
-                if (outInternalFormat) *outInternalFormat = internalFormat;
-                if (outType) *outType = GL_UNSIGNED_INT;
-                if (outFormat) switch (internalFormat) {
-                    case GL_RGBA32UI:
-                        if (outFormat) *outFormat = GL_RGBA_INTEGER;
-                        break;
-                    case GL_RGB32UI:
-                        if (outFormat) *outFormat = GL_RGB_INTEGER;
-                        break;
-                    case GL_RG32UI:
-                        if (outFormat) *outFormat = GL_RG_INTEGER;
-                        break;
-                    case GL_R32UI:
-                        if (outFormat) *outFormat = GL_RED_INTEGER;
-                        break;
-                    }
-                break;
-
-            case GL_RGBA32I:
-            case GL_RGB32I:
-            case GL_RG32I:
-            case GL_R32I:
-                if (outInternalFormat) *outInternalFormat = internalFormat;
-                if (outType) *outType = GL_INT;
-                if (outFormat) switch (internalFormat) {
-                    case GL_RGBA32I:
-                        if (outFormat) *outFormat = GL_RGBA_INTEGER;
-                        break;
-                    case GL_RGB32I:
-                        if (outFormat) *outFormat = GL_RGB_INTEGER;
-                        break;
-                    case GL_RG32I:
-                        if (outFormat) *outFormat = GL_RG_INTEGER;
-                        break;
-                    case GL_R32I:
-                        if (outFormat) *outFormat = GL_RED_INTEGER;
-                        break;
-                    }
-                break;
-
-            case GL_RGBA16: {
-                // TODO: check for extension GL_EXT_texture_norm16 for eligibility of (GL_RGBA16, GL_UNSIGNED_SHORT)
-                // Most Mali does not support this (< Mali-G6xx, some G720?)
-                if (outInternalFormat) *outInternalFormat = GL_RGBA16F;
-                if (outType) *outType = GL_FLOAT;
-                if (outFormat) *outFormat = GL_RGBA;
-                break;
-            }
-            case GL_RGBA8:
-                if (outInternalFormat) *outInternalFormat = internalFormat;
-                if (outType) *outType = GL_UNSIGNED_BYTE;
-                if (outFormat) *outFormat = GL_RGBA;
-                break;
-
-            case GL_RGBA:
-                if (outInternalFormat) *outInternalFormat = internalFormat;
-                if (outType) *outType = GL_UNSIGNED_BYTE;
-                if (outFormat) *outFormat = GL_RGBA;
-                break;
-
-            case GL_RGBA16F:
-            case GL_R16F:
-                if (outInternalFormat) *outInternalFormat = internalFormat;
-                if (outType) *outType = GL_HALF_FLOAT;
-                if (outFormat) {
-                    if (internalFormat == GL_RGBA16F) {
-                        *outFormat = GL_RGBA;
-                    } else {
-                        *outFormat = GL_RED;
-                    }
-                }
-                break;
-
-            case GL_RGB16:
-                if (outInternalFormat) *outInternalFormat = GL_RGB16F;
-                if (outType) *outType = GL_HALF_FLOAT;
-                if (outFormat) *outFormat = GL_RGB;
-                break;
-
-            case GL_RGB16F:
-                if (outInternalFormat) *outInternalFormat = internalFormat;
-                if (outType) *outType = GL_HALF_FLOAT;
-                if (outFormat) *outFormat = GL_RGB;
-                break;
-
-            case GL_RG16:
-                if (outInternalFormat) *outInternalFormat = GL_RG16F;
-                if (outType) *outType = GL_HALF_FLOAT;
-                if (outFormat) *outFormat = GL_RG;
-                break;
-
-            case GL_R8:
-                if (outInternalFormat) *outInternalFormat = internalFormat;
-                if (outType) *outType = GL_UNSIGNED_BYTE;
-                if (outFormat) *outFormat = GL_RED;
-                break;
-
-            case GL_R8_SNORM:
-                if (outInternalFormat) *outInternalFormat = internalFormat;
-                if (outType) *outType = GL_BYTE;
-                if (outFormat) *outFormat = GL_RED;
-                break;
-
-            case GL_RED:
-                // For GL_RED, we need to infer based on type or use default
-                if (outInternalFormat) *outInternalFormat = GL_R8; // Default fallback
-                if (outType) *outType = GL_UNSIGNED_BYTE;          // Default fallback
-                if (outFormat) *outFormat = GL_RED;
-                break;
-
-            case GL_R8UI:
-                if (outInternalFormat) *outInternalFormat = internalFormat;
-                if (outType) *outType = GL_UNSIGNED_BYTE;
-                if (outFormat) *outFormat = GL_RED_INTEGER;
-                break;
-
-            case GL_R8I:
-                if (outInternalFormat) *outInternalFormat = internalFormat;
-                if (outType) *outType = GL_BYTE;
-                if (outFormat) *outFormat = GL_RED_INTEGER;
-                break;
-
-            case GL_R16UI:
-                if (outInternalFormat) *outInternalFormat = internalFormat;
-                if (outType) *outType = GL_UNSIGNED_SHORT;
-                if (outFormat) *outFormat = GL_RED_INTEGER;
-                break;
-
-            case GL_R16I:
-                if (outInternalFormat) *outInternalFormat = internalFormat;
-                if (outType) *outType = GL_SHORT;
-                if (outFormat) *outFormat = GL_RED_INTEGER;
-                break;
-
-            case GL_RG8:
-                if (outInternalFormat) *outInternalFormat = internalFormat;
-                if (outType) *outType = GL_UNSIGNED_BYTE;
-                if (outFormat) *outFormat = GL_RG;
-                break;
-
-            case GL_RG8_SNORM:
-                if (outInternalFormat) *outInternalFormat = internalFormat;
-                if (outType) *outType = GL_BYTE;
-                if (outFormat) *outFormat = GL_RG;
-                break;
-
-            case GL_RG16F:
-                if (outInternalFormat) *outInternalFormat = internalFormat;
-                if (outType) *outType = GL_HALF_FLOAT;
-                if (outFormat) *outFormat = GL_RG;
-                break;
-
-            case GL_RG8UI:
-                if (outInternalFormat) *outInternalFormat = internalFormat;
-                if (outType) *outType = GL_UNSIGNED_BYTE;
-                if (outFormat) *outFormat = GL_RG_INTEGER;
-                break;
-
-            case GL_RG8I:
-                if (outInternalFormat) *outInternalFormat = internalFormat;
-                if (outType) *outType = GL_BYTE;
-                if (outFormat) *outFormat = GL_RG_INTEGER;
-                break;
-
-            case GL_RG16UI:
-                if (outInternalFormat) *outInternalFormat = internalFormat;
-                if (outType) *outType = GL_UNSIGNED_SHORT;
-                if (outFormat) *outFormat = GL_RG_INTEGER;
-                break;
-
-            case GL_RG16I:
-                if (outInternalFormat) *outInternalFormat = internalFormat;
-                if (outType) *outType = GL_SHORT;
-                if (outFormat) *outFormat = GL_RG_INTEGER;
-                break;
-
-
-            case GL_RGB8_SNORM:
-            case GL_RGBA8_SNORM:
-                if (outInternalFormat) *outInternalFormat = internalFormat;
-                if (outType) *outType = GL_BYTE;
-                if (outFormat) {
-                    if (internalFormat == GL_RGB8_SNORM) {
-                        *outFormat = GL_RGB;
-                    } else {
-                        *outFormat = GL_RGBA;
-                    }
-                }
-                break;
-
-            case GL_RGB8:
-                if (outInternalFormat) *outInternalFormat = internalFormat;
-                if (outType) *outType = GL_UNSIGNED_BYTE;
-                if (outFormat) *outFormat = GL_RGB;
-                break;
-
-            case GL_RGBA16_SNORM:
-                if (outInternalFormat) *outInternalFormat = internalFormat;
-                if (outType) *outType = GL_SHORT;
-                if (outFormat) *outFormat = GL_RGBA;
-                break;
-
-            default:
-                // Fallback handling for other formats
-                if (outInternalFormat) *outInternalFormat = internalFormat;
-                if (outType) *outType = GL_UNSIGNED_BYTE; // More reasonable default
-                if (outFormat) {
-                    // Try to infer format from internal format name
-                    if (strstr(MG_Util::ConvertGLEnumToString(internalFormat).c_str(), "RGBA") != nullptr) {
-                        *outFormat = GL_RGBA;
-                    } else if (strstr(MG_Util::ConvertGLEnumToString(internalFormat).c_str(), "RGB") != nullptr) {
-                        *outFormat = GL_RGB;
-                    } else if (strstr(MG_Util::ConvertGLEnumToString(internalFormat).c_str(), "RG") != nullptr) {
-                        *outFormat = GL_RG;
-                    } else if (strstr(MG_Util::ConvertGLEnumToString(internalFormat).c_str(), "RED") != nullptr) {
-                        *outFormat = GL_RED;
-                    } else {
-                        *outFormat = GL_RGBA; // Ultimate fallback
-                    }
-                }
-                break;
-            }
-        }
-
-        void GenerateTextureFormatInfo(TextureInternalFormat internalFormat, GLenum* outInternalFormat, GLenum* outType,
-                                       GLenum* outFormat) {
-            NormalizePixelFormat(MG_Util::ConvertTextureInternalFormatToGLEnum(internalFormat), outInternalFormat,
-                                 outType, outFormat);
+        void GenerateTextureFormatInfo(TextureInternalFormat internalFormat, GLenum* outInternalFormat,
+                                       GLenum* outFormat, GLenum* outType) {
+#ifdef TRACY_ENABLE
+            ZoneScopedC(TRACY_ZONECOLOR_BACKEND);
+#endif
+            using namespace MobileGL::MG_Util::TextureFormatProcessor;
+            auto options =
+                (MG_External::GLES::g_glesCaps.hasNorm16Texture) ? PixelFormatNormalizeOptionBit::None : PixelFormatNormalizeOptionBit::NoNorm16;
+            NormalizePixelFormat(
+                    MG_Util::ConvertTextureInternalFormatToGLEnum(internalFormat),
+                    options,
+                    outInternalFormat,
+                    outFormat, outType);
         }
     } // namespace TextureImpl
 
     namespace FramebufferImpl {
         BackendFramebufferBindingProtector::BackendFramebufferBindingProtector(GLenum target) {
+#ifdef TRACY_ENABLE
+            ZoneScopedC(TRACY_ZONECOLOR_BACKEND);
+#endif
             m_target = target;
             MG_External::GLES::glGetIntegerv(Utils::GetBindingQuery(target, false), &m_previousBinding);
         }
 
         BackendFramebufferBindingProtector::~BackendFramebufferBindingProtector() {
+#ifdef TRACY_ENABLE
+            ZoneScopedC(TRACY_ZONECOLOR_BACKEND);
+#endif
             MG_External::GLES::glBindFramebuffer(m_target, m_previousBinding);
         }
 
         GLuint BackendFramebufferBindingProtector::GetTempFBO(FramebufferTarget target) {
+#ifdef TRACY_ENABLE
+            ZoneScopedC(TRACY_ZONECOLOR_BACKEND);
+#endif
             GLenum glTarget = MG_Util::ConvertFramebufferTargetToGLEnum(target);
             GLuint& fbo = (glTarget == GL_DRAW_FRAMEBUFFER) ? s_tempDrawFBO : s_tempReadFBO;
             if (fbo == 0) {
@@ -390,6 +113,9 @@ namespace MobileGL::MG_Backend::DirectGLES {
         }
 
         void BackendFramebufferBindingProtector::BindTempFBO(MobileGL::FramebufferTarget target) {
+#ifdef TRACY_ENABLE
+            ZoneScopedC(TRACY_ZONECOLOR_BACKEND);
+#endif
             GLuint fbo = GetTempFBO(target);
             GLenum glTarget = MG_Util::ConvertFramebufferTargetToGLEnum(target);
             MG_External::GLES::glBindFramebuffer(glTarget, fbo);
@@ -398,12 +124,18 @@ namespace MobileGL::MG_Backend::DirectGLES {
 
     namespace PrgramImpl {
         String ProcessOutColorLocations(const String& glslCode) {
+#ifdef TRACY_ENABLE
+            ZoneScopedC(TRACY_ZONECOLOR_BACKEND);
+#endif
             const static std::regex pattern(R"(\n(out highp vec4 outColor)(\d+);)");
             const String replacement = "\nlayout(location=$2) $1$2;";
             return std::regex_replace(glslCode, pattern, replacement);
         }
 
         String ForceSupporterOutput(const String& glslCode) {
+#ifdef TRACY_ENABLE
+            ZoneScopedC(TRACY_ZONECOLOR_BACKEND);
+#endif
             Bool hasPrecisionFloat =
                 glslCode.find("precision ") != String::npos && glslCode.find("float;") != String::npos;
             Bool hasPrecisionInt = glslCode.find("precision ") != String::npos && glslCode.find("int;") != String::npos;
@@ -460,6 +192,9 @@ namespace MobileGL::MG_Backend::DirectGLES {
         }
 
         String RemoveLayoutBinding(const String& glslCode) {
+#ifdef TRACY_ENABLE
+            ZoneScopedC(TRACY_ZONECOLOR_BACKEND);
+#endif
             static std::regex bindingRegex(R"(layout\s*\(\s*binding\s*=\s*\d+\s*\)\s*)");
             String result = std::regex_replace(glslCode, bindingRegex, "");
             static std::regex bindingRegex2(R"(layout\s*\(\s*binding\s*=\s*\d+\s*,)");
@@ -470,12 +205,18 @@ namespace MobileGL::MG_Backend::DirectGLES {
 
     namespace Utils {
         void CheckGLESError() {
+#ifdef TRACY_ENABLE
+            ZoneScopedC(TRACY_ZONECOLOR_BACKEND);
+#endif
             while (GLenum err = MG_External::GLES::glGetError() != GL_NO_ERROR) {
                 MGLOG_E("-> GLES Error: %s", MG_Util::ConvertGLEnumToString(err).c_str());
             }
         }
 
         GLenum GetBindingQuery(GLenum target, bool isTexture) {
+#ifdef TRACY_ENABLE
+            ZoneScopedC(TRACY_ZONECOLOR_BACKEND);
+#endif
             switch (target) {
             case GL_TEXTURE_BUFFER:
                 return isTexture ? GL_TEXTURE_BINDING_BUFFER : GL_TEXTURE_BUFFER_BINDING;

@@ -1,6 +1,14 @@
+// MobileGL - MobileGL/MG_Impl/GLImpl/Getter/GL_Getter.cpp
+// Copyright (c) 2025-2026 MobileGL-Dev
+// Licensed under the GNU Lesser General Public License v3.0:
+//   https://www.gnu.org/licenses/gpl-3.0.txt
+//   https://www.gnu.org/licenses/lgpl-3.0.txt
+// SPDX-License-Identifier: LGPL-3.0-only
+// End of Source File Header
+
 #include "GL_Getter.h"
 #include <Config.h>
-#include <MGLGitHash.h>
+#include <MGGitHash.h>
 #include <MG_State/GLState/Core.h>
 #include <MG_State/GLState/ErrorState/ErrorInfo.h>
 #include <MG_Util/Converters/GLToStr/GLEnumConverter.h>
@@ -69,15 +77,15 @@ namespace MobileGL {
                 return (const GLubyte*)vendorString.c_str();
             case GL_VERSION: {
                 if (versionStr.empty()) {
-                    versionStr =
-                        std::format("{} {} {}, {} Backend, GIT@" GIT_COMMIT_HASH_SHORT,
-                                    MG_Config::RendererInfoPtr->RendererGLInfo.TargetGLVersion.toString().c_str(),
-                                    MG_Config::ProjectName.c_str(), MG_Config::CoreVersion.toString().c_str(),
-                                    MG_Config::RendererInfoPtr->BackendName.c_str());
+                    versionStr = std::format(
+                        "{} {} {}, {} Backend, GIT@" GIT_COMMIT_HASH_SHORT,
+                        MG_Config::RendererInfoPtr->RendererGLInfo.TargetGLVersion.toString().c_str(),
+                        MG_Config::ProjectName.c_str(),
+                        MG_Config::CoreVersion.toFormattedString(MG_Config::DefaultVersionStringFormatAttrib).c_str(),
+                        MG_Config::RendererInfoPtr->BackendName.c_str());
                 }
                 return (const GLubyte*)versionStr.c_str();
             }
-
             case GL_RENDERER: {
                 if (rendererString.empty()) {
                     const char* backendStr = (const char*)GetString_Backend(GL_RENDERER);
@@ -887,6 +895,9 @@ namespace MobileGL {
             case GL_MAX_COLOR_ATTACHMENTS:
             case GL_MAX_DRAW_BUFFERS:
                 *params = MG_State::GLState::FramebufferObject::MAX_DRAW_BUFFERS; // TODO: use backend value
+                break;
+            case GL_MAX_SAMPLES:
+                *params = 16; // TODO
                 break;
             default:
                 MGLOG_E("glGetIntegerv: Invalid enum %s (0x%X)", MG_Util::ConvertGLEnumToString(pname).c_str(), pname);

@@ -1,3 +1,11 @@
+// MobileGL - MobileGL/MG_Util/Converters/GLToMG/TextureEnumConverter.cpp
+// Copyright (c) 2025-2026 MobileGL-Dev
+// Licensed under the GNU Lesser General Public License v3.0:
+//   https://www.gnu.org/licenses/gpl-3.0.txt
+//   https://www.gnu.org/licenses/lgpl-3.0.txt
+// SPDX-License-Identifier: LGPL-3.0-only
+// End of Source File Header
+
 #include "TextureEnumConverter.h"
 #include "GL/glext.h"
 #include "MG_Util/Converters/GLToStr/GLEnumConverter.h"
@@ -108,6 +116,8 @@ namespace MobileGL {
                 return TextureInternalFormat::RGB10;
             case GL_RGB12:
                 return TextureInternalFormat::RGB12;
+            case GL_RGB16:
+                return TextureInternalFormat::RGB16;
             case GL_RGB16_SNORM:
                 return TextureInternalFormat::RGB16Snorm;
             case GL_RGBA2:
@@ -225,7 +235,7 @@ namespace MobileGL {
             case GL_RGBA:
                 return TextureInternalFormat::RGBA;
             default:
-                MGLOG_D("%s: unknown internal format %s", MG_Util::ConvertGLEnumToString(internalformat).c_str());
+                MGLOG_D("%s: unknown internal format %s", __func__, MG_Util::ConvertGLEnumToString(internalformat).c_str());
                 return TextureInternalFormat::Unknown;
             }
         }
@@ -246,6 +256,10 @@ namespace MobileGL {
                 return TexturePixelDataType::Int;
             case GL_FLOAT:
                 return TexturePixelDataType::Float;
+            case GL_HALF_FLOAT:
+                return TexturePixelDataType::HalfFloat;
+            case GL_UNSIGNED_INT_24_8:
+                return TexturePixelDataType::UnsignedInt248;
             case GL_UNSIGNED_BYTE_3_3_2:
                 return TexturePixelDataType::UnsignedByte332;
             case GL_UNSIGNED_BYTE_2_3_3_REV:
@@ -317,6 +331,8 @@ namespace MobileGL {
                 return TextureUploadTarget::CubeMapPositiveZ;
             case GL_TEXTURE_CUBE_MAP_NEGATIVE_Z:
                 return TextureUploadTarget::CubeMapNegativeZ;
+            case GL_TEXTURE_BUFFER:
+                return TextureUploadTarget::TextureBuffer;
             case GL_PROXY_TEXTURE_CUBE_MAP:
                 return TextureUploadTarget::ProxyCubeMap;
             case GL_TEXTURE_2D_MULTISAMPLE:

@@ -2,7 +2,15 @@ cmake_minimum_required(VERSION 3.22.1)
 
 project("MobileGL")
 
-option(MOBILEGL_FORCE_RELEASE_OPT "Enable Release optimization flags in Debug build" ON)
+option(MOBILEGL_BUILD_TEST        "Build MobileGL tests"                             ON )
+option(MOBILEGL_BUILD_BENCHMARK   "Build MobileGL benchmarks"                        ON )
+option(MOBILEGL_FORCE_RELEASE_OPT "Enable Release optimization flags in Debug build" ON )
+option(MOBILEGL_ENABLE_TRANCY     "Enable trancy for profiling"                      OFF)
+
+if (ANDROID)
+    set(MOBILEGL_BUILD_TEST       OFF CACHE BOOL "Build MobileGL tests"      FORCE)
+    set(MOBILEGL_BUILD_BENCHMARK  OFF CACHE BOOL "Build MobileGL benchmarks" FORCE)
+endif()
 
 if (NOT CMAKE_BUILD_TYPE STREQUAL "Debug" OR MOBILEGL_FORCE_RELEASE_OPT)
     include(CheckIPOSupported)
@@ -15,14 +23,15 @@ if (NOT CMAKE_BUILD_TYPE STREQUAL "Debug" OR MOBILEGL_FORCE_RELEASE_OPT)
         add_compile_options(-O3 -ffunction-sections -fdata-sections)
         add_link_options(-Wl,--gc-sections)
     elseif (CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
-        add_compile_options(/O2 /GL)
+#        add_compile_options(/O2)
     else ()
-        add_compile_options(-O3)
+        add_compile_options(-O2)
     endif()
 endif()
 
 if (CMAKE_CXX_COMPILER_ID MATCHES "MSVC")
     add_compile_options(/Zc:preprocessor)
+    add_compile_options(/Zc:__cplusplus)
 endif()
 
 enable_language(CXX)
@@ -39,7 +48,7 @@ if (MSVC)
     set(CMAKE_CXX_FLAGS "/EHsc ${CMAKE_CXX_FLAGS}")
 endif()
 
-# Generate MGLGitHash.h
+# Generate MGGitHash.h
 execute_process(
     COMMAND git rev-parse HEAD
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
@@ -50,8 +59,8 @@ execute_process(
 string(SUBSTRING "${GIT_COMMIT_HASH_FULL}" 0 7 GIT_COMMIT_HASH_SHORT)
 
 configure_file(
-    ${CMAKE_SOURCE_DIR}/MobileGL/MG_Util/Miscellany/MGLGitHash.h.in
-    ${CMAKE_BINARY_DIR}/generated/MGLGitHash.h
+    ${CMAKE_SOURCE_DIR}/MobileGL/MG_Util/Miscellany/MGGitHash.h.in
+    ${CMAKE_BINARY_DIR}/generated/MGGitHash.h
     @ONLY
 )
 
@@ -59,11 +68,11 @@ include_directories(${CMAKE_BINARY_DIR}/generated)
 
 set(ENABLE_RTTI                ON  CACHE BOOL "Enables RTTI (will be took by glslang)" FORCE)
 
-set(ENABLE_GLSLANG_BINARIES    OFF CACHE BOOL "Disable glslangValidator/spirv-remap" FORCE)
-set(ENABLE_SPVREMAPPER         OFF CACHE BOOL "Disable SPVRemapper" FORCE)
-set(ENABLE_OPT                 OFF CACHE BOOL "Disable SPIRV-Tools opt usage in glslang" FORCE)
-set(BUILD_EXTERNAL             OFF CACHE BOOL "Don't build external deps in External/" FORCE)
-set(ENABLE_GLSLANG_INSTALL     OFF CACHE BOOL "Don't install glslang targets" FORCE)
+set(ENABLE_GLSLANG_BINARIES    OFF CACHE BOOL "Enable glslangValidator/spirv-remap" FORCE)
+set(ENABLE_SPVREMAPPER         OFF CACHE BOOL "Enable SPVRemapper" FORCE)
+set(ENABLE_OPT                 ON  CACHE BOOL "Enable SPIRV-Tools opt usage in glslang" FORCE)
+set(BUILD_EXTERNAL             ON  CACHE BOOL "Build external deps in External/" FORCE)
+set(ENABLE_GLSLANG_INSTALL     OFF CACHE BOOL "Install glslang targets" FORCE)
 
 set(SPIRV_CROSS_C_API          ON  CACHE BOOL "Enable C API" FORCE)
 set(SPIRV_CROSS_ENABLE_GLSL    ON  CACHE BOOL "Enable GLSL backend" FORCE)
@@ -77,6 +86,18 @@ set(SPIRV_CROSS_STATIC         ON  CACHE BOOL "Prefer static libs" FORCE)
 add_subdirectory(3rdparty/glslang)
 add_subdirectory(3rdparty/SPIRV-Cross)
 
+set(TRACY_ENABLE ${MOBILEGL_ENABLE_TRACY} CACHE BOOL "Enable Tracy, this is an internal variable" FORCE)
+
+if (TRACY_ENABLE)
+    set(TRACY_ON_DEMAND            ON  CACHE BOOL "Enable profiling only connected" FORCE)
+    set(TRACY_NO_EXIT              OFF CACHE BOOL "Don't exit Tracy until connected" FORCE)
+    set(TRACY_DELAYED_INIT         ON  CACHE BOOL "Don't init Tracy on library load" FORCE)
+    set(TRACY_MANUAL_LIFETIME      ON  CACHE BOOL "Manually control Tracy lifetime" FORCE)
+    set(TRACY_NO_CRASH_HANDLER     ON  CACHE BOOL "Disable crash handling" FORCE)
+
+    add_subdirectory(3rdparty/tracy)
+endif ()
+
 set(SOURCE_FILES
     MobileGL/Init.cpp
 
@@ -86,6 +107,7 @@ set(SOURCE_FILES
     MobileGL/MG_Util/Metrics/BufferMetrics.cpp
 
     MobileGL/MG_Util/Converters/GLToStr/GLEnumConverter.cpp
+    MobileGL/MG_Util/Converters/EGLToStr/EGLEnumConverter.cpp
     MobileGL/MG_Util/Converters/MGToStr/DataTypeConverter.cpp
     MobileGL/MG_Util/Converters/MGToStr/RenderStateEnumConverter.cpp
     MobileGL/MG_Util/Converters/MGToStr/GLExtensionConverter.cpp
@@ -118,6 +140,7 @@ set(SOURCE_FILES
     MobileGL/MG_Util/BackendLoaders/OpenGL/Loader.cpp
 
     MobileGL/MG_Util/Texture/PixelStoreProcessor.cpp
+    MobileGL/MG_Util/Texture/TextureFormatProcessor.cpp
 
     MobileGL/MG_Impl/GLXImpl/Exporting/Definitions.cpp
     MobileGL/MG_Impl/GLXImpl/LookUp/LookUp.cpp
@@ -146,6 +169,7 @@ set(SOURCE_FILES
     MobileGL/MG_Impl/GLImpl/Sync/GL_Sync.cpp
 
     MobileGL/MG_Impl/Init.cpp
+    MobileGL/MG_Impl/GetProcAddress.cpp
 
     MobileGL/MG_Backend/Init.cpp
 
@@ -159,11 +183,13 @@ set(SOURCE_FILES
     MobileGL/MG_State/GLState/BufferState/BufferObject.cpp
     MobileGL/MG_State/GLState/VertexArrayState/VertexArrayState.cpp
     MobileGL/MG_State/GLState/VertexArrayState/VertexArrayObject.cpp
+    MobileGL/MG_State/GLState/TextureState/MipmapStorage.cpp
     MobileGL/MG_State/GLState/TextureState/TextureObject.cpp
     MobileGL/MG_State/GLState/TextureState/TextureObject1D.cpp
     MobileGL/MG_State/GLState/TextureState/TextureObject2D.cpp
     MobileGL/MG_State/GLState/TextureState/TextureObject2DCube.cpp
     MobileGL/MG_State/GLState/TextureState/TextureObject3D.cpp
+    MobileGL/MG_State/GLState/TextureState/TextureObjectBuffer.cpp
     MobileGL/MG_State/GLState/TextureState/TextureUnit.cpp
     MobileGL/MG_State/GLState/TextureState/TextureState.cpp
     MobileGL/MG_State/GLState/ProgramState/ProgramObject.cpp
@@ -174,6 +200,8 @@ set(SOURCE_FILES
     MobileGL/MG_State/GLState/FramebufferState/FramebufferState.cpp
     MobileGL/MG_State/GLState/SamplerState/SamplerObject.cpp
     MobileGL/MG_State/GLState/SamplerState/SamplerState.cpp
+    MobileGL/MG_State/GLState/RenderbufferState/RenderbufferObject.cpp
+    MobileGL/MG_State/GLState/RenderbufferState/RenderbufferState.cpp
 )
 
 add_library(${CMAKE_PROJECT_NAME} SHARED 
@@ -248,6 +276,13 @@ target_link_libraries(${CMAKE_PROJECT_NAME}_s
     spirv-cross-c
 )
 
+if (TRACY_ENABLE)
+    target_link_libraries(${CMAKE_PROJECT_NAME} PUBLIC Tracy::TracyClient)
+    target_link_libraries(${CMAKE_PROJECT_NAME}_s PUBLIC Tracy::TracyClient)
+    target_compile_definitions(${CMAKE_PROJECT_NAME} PUBLIC -DTRACY_ENABLE)
+    target_compile_definitions(${CMAKE_PROJECT_NAME}_s PUBLIC -DTRACY_ENABLE)
+endif ()
+
 if (ANDROID)
     target_link_libraries(${CMAKE_PROJECT_NAME} PUBLIC
         android
@@ -258,12 +293,10 @@ if (ANDROID)
         log)
 endif()
 
-if (NOT ANDROID)
-
-    set(BUILD_TEST ON CACHE BOOL "Build the tests")
-    set(BUILD_BENCHMARK ON CACHE BOOL "Build the benchmarks")
-
+if (MOBILEGL_BUILD_TEST)
     add_subdirectory(MobileGL/MG_Test)
-    add_subdirectory(MobileGL/MG_Benchmark)
+endif()
 
+if (MOBILEGL_BUILD_BENCHMARK)
+    add_subdirectory(MobileGL/MG_Benchmark)
 endif()

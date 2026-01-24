@@ -1,10 +1,18 @@
+// MobileGL - MobileGL/MG_Impl/Init.cpp
+// Copyright (c) 2025-2026 MobileGL-Dev
+// Licensed under the GNU Lesser General Public License v3.0:
+//   https://www.gnu.org/licenses/gpl-3.0.txt
+//   https://www.gnu.org/licenses/lgpl-3.0.txt
+// SPDX-License-Identifier: LGPL-3.0-only
+// End of Source File Header
+
 #include "Init.h"
 #include "GLImpl/Texture/ProxyTexture.h"
 #include "GLImpl/Framebuffer/GL_Framebuffer.h"
 
-#include "MG_State/GLState/TextureState/TextureObject1D.h"
-#include "MG_State/GLState/TextureState/TextureObject2D.h"
-#include "MG_State/GLState/TextureState/TextureObject3D.h"
+#include <MG_State/GLState/TextureState/TextureObject1D.h>
+#include <MG_State/GLState/TextureState/TextureObject2D.h>
+#include <MG_State/GLState/TextureState/TextureObject3D.h>
 
 namespace MobileGL {
     namespace MG_Impl {

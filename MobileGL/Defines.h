@@ -1,3 +1,11 @@
+// MobileGL - MobileGL/Defines.h
+// Copyright (c) 2025-2026 MobileGL-Dev
+// Licensed under the GNU Lesser General Public License v3.0:
+//   https://www.gnu.org/licenses/gpl-3.0.txt
+//   https://www.gnu.org/licenses/lgpl-3.0.txt
+// SPDX-License-Identifier: LGPL-3.0-only
+// End of Source File Header
+
 #pragma once
 
 // ============== Platform-specific definitions and macros ============== //
@@ -36,6 +44,13 @@
 #define MOBILEGL_LOG_ENABLE_CONSOLE 0
 #define MOBILEGL_LOG_ENABLE_FILE 1
 #define MOBILEGL_LOG_ENABLE_ANDROID 1
+#define MOBILEGL_ENABLE_SCOPE_MARKER 1
+
+// Require C++23
+// Clang/Android NDK still doesn't have support for that :(
+#if __cplusplus >= 202302L && !__ANDROID__
+#define MOBILEGL_LOG_ENABLE_STACKTRACE 0
+#endif
 
 #ifdef __ANDROID__
 #define MOBILEGL_LOG_FILE_PATH "/sdcard/MG/latest.log"
@@ -43,7 +58,7 @@
 #define MOBILEGL_LOG_FILE_PATH ""
 #endif
 
-#if _MSC_VER
+#if defined _MSC_VER or defined __MINGW32__ or defined __MINGW64__
 #define TRAP assert(false)
 #elif __clang__
 #define TRAP __builtin_debugtrap()

@@ -1,3 +1,11 @@
+// MobileGL - MobileGL/MG_Util/Converters/MGToGL/TextureEnumConverter.cpp
+// Copyright (c) 2025-2026 MobileGL-Dev
+// Licensed under the GNU Lesser General Public License v3.0:
+//   https://www.gnu.org/licenses/gpl-3.0.txt
+//   https://www.gnu.org/licenses/lgpl-3.0.txt
+// SPDX-License-Identifier: LGPL-3.0-only
+// End of Source File Header
+
 #include "TextureEnumConverter.h"
 #include "GL/gl.h"
 #include "MG_Util/Types.h"
@@ -239,6 +247,10 @@ namespace MobileGL {
                 return GL_INT;
             case TexturePixelDataType::Float:
                 return GL_FLOAT;
+            case TexturePixelDataType::HalfFloat:
+                return GL_HALF_FLOAT;
+            case TexturePixelDataType::UnsignedInt248:
+                return GL_UNSIGNED_INT_24_8;
             case TexturePixelDataType::UnsignedByte332:
                 return GL_UNSIGNED_BYTE_3_3_2;
             case TexturePixelDataType::UnsignedByte233Rev:

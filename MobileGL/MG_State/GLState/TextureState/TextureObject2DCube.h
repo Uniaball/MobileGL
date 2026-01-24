@@ -1,10 +1,18 @@
+// MobileGL - MobileGL/MG_State/GLState/TextureState/TextureObject2DCube.h
+// Copyright (c) 2025-2026 MobileGL-Dev
+// Licensed under the GNU Lesser General Public License v3.0:
+//   https://www.gnu.org/licenses/gpl-3.0.txt
+//   https://www.gnu.org/licenses/lgpl-3.0.txt
+// SPDX-License-Identifier: LGPL-3.0-only
+// End of Source File Header
+
 #pragma once
 #include "TextureObject.h"
 
 namespace MobileGL {
     namespace MG_State {
         namespace GLState {
-            class TextureObject2DCube : public TextureObjectBase {
+            class TextureObject2DCube : public TextureObjectMipmap {
             public:
                 explicit TextureObject2DCube(Uint externalIndex);
 
@@ -24,7 +32,7 @@ namespace MobileGL {
 
             protected:
                 Uint GetIndexOfTextureUploadTarget(TextureUploadTarget target) const override;
-                TextureStorage<6> m_textureStorage;
+                MipmapUploadTargetArray<6> m_textureStorage;
                 const Vector<TextureUploadTarget> m_uploadTargets{
                     TextureUploadTarget::CubeMapPositiveX, TextureUploadTarget::CubeMapNegativeX,
                     TextureUploadTarget::CubeMapPositiveY, TextureUploadTarget::CubeMapNegativeY,

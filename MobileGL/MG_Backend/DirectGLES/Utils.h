@@ -1,3 +1,11 @@
+// MobileGL - MobileGL/MG_Backend/DirectGLES/Utils.h
+// Copyright (c) 2025-2026 MobileGL-Dev
+// Licensed under the GNU Lesser General Public License v3.0:
+//   https://www.gnu.org/licenses/gpl-3.0.txt
+//   https://www.gnu.org/licenses/lgpl-3.0.txt
+// SPDX-License-Identifier: LGPL-3.0-only
+// End of Source File Header
+
 #pragma once
 #include <Includes.h>
 #include <MG_State/GLState/Core.h>
@@ -10,6 +18,12 @@ namespace MobileGL::MG_Backend::DirectGLES {
             void Clear();
             ErrorLopper();
             ~ErrorLopper();
+        };
+
+        class OpenGLScopeMarker {
+        public:
+            explicit OpenGLScopeMarker(String scopeName);
+            ~OpenGLScopeMarker();
         };
     } // namespace DebugImpl
 
@@ -52,9 +66,8 @@ namespace MobileGL::MG_Backend::DirectGLES {
             GLint m_previousBinding = 0;
         };
 
-        void NormalizePixelFormat(GLenum internalFormat, GLenum* outInternalFormat, GLenum* outType, GLenum* outFormat);
-        void GenerateTextureFormatInfo(TextureInternalFormat internalFormat, GLenum* outInternalFormat, GLenum* outType,
-                                       GLenum* outFormat);
+        void GenerateTextureFormatInfo(TextureInternalFormat internalFormat, GLenum* outInternalFormat,
+                                       GLenum* outFormat, GLenum* outType);
     } // namespace TextureImpl
 
     namespace FramebufferImpl {

@@ -1,3 +1,11 @@
+// MobileGL - MobileGL/MG_Impl/GLImpl/VertexArray/GL_VertexArray.cpp
+// Copyright (c) 2025-2026 MobileGL-Dev
+// Licensed under the GNU Lesser General Public License v3.0:
+//   https://www.gnu.org/licenses/gpl-3.0.txt
+//   https://www.gnu.org/licenses/lgpl-3.0.txt
+// SPDX-License-Identifier: LGPL-3.0-only
+// End of Source File Header
+
 #include "GL_VertexArray.h"
 #include "Validators.h"
 #include <MG_State/GLState/Core.h>
@@ -169,7 +177,26 @@ namespace MobileGL {
             return GL_TRUE;
         }
 
+        void VertexAttribDivisor_State(GLuint index, GLuint divisor) {
+            if (!VertexArrayImpl::ValidateVertexAttributeIndex(index)) return;
+
+            auto vao = MG_State::pGLContext->GetBoundVertexArray();
+            if (!vao) {
+                MG_State::pGLContext->RecordError(ErrorCode::InvalidOperation,
+                                                  MakeShared<GenericErrorInfo>("MG_Impl/GLImpl",
+                                                                               "VertexAttribDivisor_State",
+                                                                               "No vertex array object is bound."));
+                return;
+            }
+
+            vao->SetAttributeDivisor(index, divisor);
+        }
+
         /* @INSERTION_POINT:FUNCTION_IMPLEMENTATION@ */
+        void VertexAttribDivisor(GLuint index, GLuint divisor) {
+            VertexAttribDivisor_State(index, divisor);
+        }
+
         GLboolean IsVertexArray(GLuint array) {
             return IsVertexArray_State(array);
         }

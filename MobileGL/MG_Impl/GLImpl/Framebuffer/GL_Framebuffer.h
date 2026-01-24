@@ -1,3 +1,11 @@
+// MobileGL - MobileGL/MG_Impl/GLImpl/Framebuffer/GL_Framebuffer.h
+// Copyright (c) 2025-2026 MobileGL-Dev
+// Licensed under the GNU Lesser General Public License v3.0:
+//   https://www.gnu.org/licenses/gpl-3.0.txt
+//   https://www.gnu.org/licenses/lgpl-3.0.txt
+// SPDX-License-Identifier: LGPL-3.0-only
+// End of Source File Header
+
 #pragma once
 #include "MG_State/GLState/FramebufferState/FramebufferObject.h"
 #include <Includes.h>
@@ -6,6 +14,19 @@
 namespace MobileGL {
     namespace MG_Impl::GLImpl {
         /* @INSERTION_POINT:FUNCTION_DECLARATION@ */
+        void ClearBufferfi(GLenum buffer, GLint drawbuffer, GLfloat depth, GLint stencil);
+        void ClearBufferfv(GLenum buffer, GLint drawbuffer, const GLfloat* value);
+        void ClearBufferuiv(GLenum buffer, GLint drawbuffer, const GLuint* value);
+        void ClearBufferiv(GLenum buffer, GLint drawbuffer, const GLint* value);
+        void RenderbufferStorageMultisample(GLenum target, GLsizei samples, GLenum internalformat, GLsizei width,
+                                            GLsizei height);
+        void RenderbufferStorage(GLenum target, GLenum internalformat, GLsizei width, GLsizei height);
+        GLboolean IsRenderbuffer(GLuint renderbuffer);
+        void GetRenderbufferParameteriv(GLenum target, GLenum pname, GLint* params);
+        void GenRenderbuffers(GLsizei n, GLuint* renderbuffers);
+        void FramebufferRenderbuffer(GLenum target, GLenum attachment, GLenum renderbuffertarget, GLuint renderbuffer);
+        void DeleteRenderbuffers(GLsizei n, const GLuint* renderbuffers);
+        void BindRenderbuffer(GLenum target, GLuint renderbuffer);
         void SampleMaski(GLuint maskNumber, GLbitfield mask);
         void RenderbufferStorageMultisample(GLenum target, GLsizei samples, GLenum internalformat, GLsizei width,
                                             GLsizei height);
@@ -23,6 +44,7 @@ namespace MobileGL {
         void FramebufferTexture1D(GLenum target, GLenum attachment, GLenum textarget, GLuint texture, GLint level);
         void FramebufferTexture(GLenum target, GLenum attachment, GLuint texture, GLint level);
         void FramebufferRenderbuffer(GLenum target, GLenum attachment, GLenum renderbuffertarget, GLuint renderbuffer);
+        void DrawBuffer(GLenum buf);
         void DrawBuffers(GLsizei n, const GLenum* bufs);
         void DeleteRenderbuffers(GLsizei n, const GLuint* renderbuffers);
         void DeleteFramebuffers(GLsizei n, const GLuint* framebuffers);

@@ -1,3 +1,11 @@
+// MobileGL - MobileGL/Includes.h
+// Copyright (c) 2025-2026 MobileGL-Dev
+// Licensed under the GNU Lesser General Public License v3.0:
+//   https://www.gnu.org/licenses/gpl-3.0.txt
+//   https://www.gnu.org/licenses/lgpl-3.0.txt
+// SPDX-License-Identifier: LGPL-3.0-only
+// End of Source File Header
+
 #pragma once
 
 // Include significant project headers
@@ -33,23 +41,22 @@
 #include <string_view>
 #include <unordered_map>
 #include <mutex>
+#include <bitset>
+#if __cplusplus >= 202302L && MOBILEGL_LOG_ENABLE_STACKTRACE
+#include <stacktrace>
+#endif
 
 // Include FastSTL
 #include <FastSTL/UnorderedMap.h>
 
-// Include ankerl::unordered_dense
-#include <ankerl/unordered_dense.h>
-
 // Include spirv_cross
 #include <spirv_cross/spirv_cross_c.h>
 
-// Include glm
-#include <glm/glm.hpp>
-#include <glm/gtc/matrix_transform.hpp>
-
 // Include OpenGL and EGL headers
-#include <GL/gl.h>
 #include <EGL/egl.h>
+#define GL_GLEXT_PROTOTYPES
+#include <GL/glcorearb.h>
+#undef GL_GLEXT_PROTOTYPES
 #include <GL/glext.h>
 #include <GLES3/gl32.h>
 
@@ -81,6 +88,13 @@
 #include <vulkan/vulkan.h>
 #include <android/native_window.h>
 #include <vulkan/vulkan_android.h>
+#endif
+
+#ifdef TRACY_ENABLE
+#include <tracy/Tracy.hpp>
+#define TRACY_ZONECOLOR_ENTRY 0xFF0000
+#define TRACY_ZONECOLOR_FRONTEND 0x00FF00
+#define TRACY_ZONECOLOR_BACKEND 0x00FF00
 #endif
 
 // Post-includes for significant project headers

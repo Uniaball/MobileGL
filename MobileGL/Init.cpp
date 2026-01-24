@@ -1,7 +1,18 @@
-#include "Includes.h"
+// MobileGL - MobileGL/Init.cpp
+// Copyright (c) 2025-2026 MobileGL-Dev
+// Licensed under the GNU Lesser General Public License v3.0:
+//   https://www.gnu.org/licenses/gpl-3.0.txt
+//   https://www.gnu.org/licenses/lgpl-3.0.txt
+// SPDX-License-Identifier: LGPL-3.0-only
+// End of Source File Header
+
+#include "Init.h"
+#include "Config.h"
 #include <MG_Impl/Init.h>
 #include <MG_Backend/Backends.h>
 #include <MG_State/GLState/Core.h>
+#include <MG_Impl/GLImpl/Texture/ProxyTexture.h>
+#include <MG_Impl/GLImpl/Framebuffer/GL_Framebuffer.h>
 
 namespace MobileGL {
     void MG_Initialize() {
@@ -21,7 +32,13 @@ namespace MobileGL {
     void MG_Destroy() {
         MGLOG_I("MobileGL closing...");
         glslang::FinalizeProcess();
+        delete MG_State::pGLContext;
+        MG_Config::RendererInfoPtr.reset();
+        delete MG_Impl::GLImpl::TextureImpl::pProxyTextureManager;
+        delete MG_Impl::GLImpl::FramebufferImpl::pDefaultFramebufferInfo;
         MG_Util::Debug::Close();
+
+        // TODO: add and use Destroy functions for other subsystems
     }
 
 #if defined(__linux__) || defined(__APPLE__)
