@@ -31,6 +31,7 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <cassert>
 #include <cstdarg>
 #include <cstring>
 #include <numeric>
@@ -79,6 +80,7 @@
 #ifdef __linux__
 #include <dlfcn.h>
 #include <pthread.h>
+#include <vulkan/vulkan.h>
 #endif
 
 #ifdef _WIN32
@@ -93,7 +95,6 @@
 #include <unistd.h>
 #include <pthread.h>
 #include <android/log.h>
-#include <vulkan/vulkan.h>
 #include <android/native_window.h>
 #include <vulkan/vulkan_android.h>
 #endif
