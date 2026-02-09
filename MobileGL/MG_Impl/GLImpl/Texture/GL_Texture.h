@@ -12,6 +12,7 @@
 namespace MobileGL {
     namespace MG_Impl::GLImpl {
         /* @INSERTION_POINT:FUNCTION_DECLARATION@ */
+        void GetTexImage(GLenum target, GLint level, GLenum format, GLenum type, GLvoid* pixels);
         void TexSubImage3D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLsizei width,
                            GLsizei height, GLsizei depth, GLenum format, GLenum type, const void* pixels);
         void TexSubImage2D(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLsizei width, GLsizei height,
@@ -20,10 +21,10 @@ namespace MobileGL {
                            const GLvoid* pixels);
         void TexParameterf(GLenum target, GLenum pname, GLfloat param);
         void TexParameteri(GLenum target, GLenum pname, GLint param);
-        void TexParameterfv(GLenum target, GLenum pname, const GLfloat * params);
-        void TexParameteriv(GLenum target, GLenum pname, const GLint * params);
-        void TexParameterIiv(GLenum target, GLenum pname, const GLint * params);
-        void TexParameterIuiv(GLenum target, GLenum pname, const GLuint * params);
+        void TexParameterfv(GLenum target, GLenum pname, const GLfloat* params);
+        void TexParameteriv(GLenum target, GLenum pname, const GLint* params);
+        void TexParameterIiv(GLenum target, GLenum pname, const GLint* params);
+        void TexParameterIuiv(GLenum target, GLenum pname, const GLuint* params);
 
         void TexImage3DMultisample(GLenum target, GLsizei samples, GLenum internalformat, GLsizei width, GLsizei height,
                                    GLsizei depth, GLboolean fixedsamplelocations);
@@ -43,7 +44,6 @@ namespace MobileGL {
         void GetTexParameterfv(GLenum target, GLenum pname, GLfloat* params);
         void GetTexLevelParameteriv(GLenum target, GLint level, GLenum pname, GLint* params);
         void GetTexLevelParameterfv(GLenum target, GLint level, GLenum pname, GLfloat* params);
-        void GetTexImage(GLenum target, GLint level, GLenum format, GLenum type, GLvoid* pixels);
         void GetCompressedTexImage(GLenum target, GLint level, void* img);
         void GenTextures(GLsizei n, GLuint* textures);
         void DeleteTextures(GLsizei n, const GLuint* textures);

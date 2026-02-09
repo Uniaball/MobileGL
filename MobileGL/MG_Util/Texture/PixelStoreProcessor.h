@@ -14,8 +14,12 @@
 
 namespace MobileGL::MG_Util::PixelStoreProcessor {
     void* ProcessTexturePixelsDataUnpack(const void* inputPixels, const PixelStoreParameters& params,
-                                         TextureInternalFormat targetInternalFormat, TextureInputFormat textureInputFormat, TexturePixelDataType inputDataType,
+                                         TextureInternalFormat targetInternalFormat,
+                                         TextureInputFormat textureInputFormat, TexturePixelDataType inputDataType,
                                          IntVec3 dimension, Bool isBitmap, SizeT& outSize);
-    void* ProcessTexturePixelsDataPack(const void* inputPixels, const PixelStoreParameters& params, SizeT pixelSize,
+    void* ProcessTexturePixelsDataPack(const void* inputPixels, const PixelStoreParameters& params,
+                                       TextureInternalFormat srcInternalFormat, TexturePixelDataType srcDataType,
+                                       TextureInputFormat dstInputFormat, TexturePixelDataType dstDataType,
                                        IntVec3 dimension, Bool isBitmap, SizeT& outSize);
+    void ProcessColorSwizzle(void* data, SizeT pixelCount, const Vector<TextureSwizzleParam>& swizzle);
 } // namespace MobileGL::MG_Util::PixelStoreProcessor
