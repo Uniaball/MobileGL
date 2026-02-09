@@ -31,6 +31,7 @@ namespace MobileGL::MG_Backend::DirectVulkan {
         void Shutdown();
 
         void RenderFrame();
+        void Present();
 
         void RegisterRenderCallback(const std::string& name, RenderCallback cb);
         void UnregisterRenderCallback(const std::string& name);
@@ -54,7 +55,7 @@ namespace MobileGL::MG_Backend::DirectVulkan {
         VkCommandPool CommandPool = VK_NULL_HANDLE;
 
         std::vector<std::unique_ptr<FrameContext>> Frames;
-        uint32_t CurrentFrame = 0;
+        Uint32 CurrentFrame = 0;
 
         // Render callbacks map
         std::vector<std::pair<std::string, RenderCallback>> RenderCallbacks;
@@ -68,5 +69,6 @@ namespace MobileGL::MG_Backend::DirectVulkan {
         void DestroyFrameResources();
         void RecordFrameCommandBuffer(FrameContext& frame, uint32_t imageIndex);
         void RecreateSwapchainIfNeeded();
+        void FrameBegin();
     };
 } // namespace MobileGL::MG_Backend::DirectVulkan

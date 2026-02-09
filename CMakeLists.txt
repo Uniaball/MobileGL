@@ -13,10 +13,32 @@ if (ANDROID)
 endif()
 
 if (NOT CMAKE_BUILD_TYPE STREQUAL "Debug" OR MOBILEGL_FORCE_RELEASE_OPT)
+    # Check if ThinLTO or LTO is suppported
     include(CheckIPOSupported)
+    include(CheckCCompilerFlag)
+    include(CheckCXXCompilerFlag)
+
     check_ipo_supported(RESULT LTOSupported OUTPUT LTOError)
-    if (LTOSupported)
-        set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
+
+    check_c_compiler_flag("-flto" HAS_LTO_C)
+    check_cxx_compiler_flag("-flto" HAS_LTO_CXX)
+
+    if (LTOSupported OR (HAS_LTO_C AND HAS_LTO_CXX))
+        # Check ThinLTO
+        check_c_compiler_flag("-flto=thin" HAS_THINLTO_C)
+        check_cxx_compiler_flag("-flto=thin" HAS_THINLTO_CXX)
+        if (HAS_THINLTO_C AND HAS_THINLTO_CXX)
+            message(STATUS "ThinLTO supported, using -flto=thin")
+
+            add_compile_options(-flto=thin)
+            add_link_options(-flto=thin)
+        else()
+            # ThinLTO is not supported
+            message(STATUS "ThinLTO not available, fallback to CMAKE IPO")
+            set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
+        endif()
+    else()
+        message(STATUS "IPO not supported: ${LTOError}")
     endif()
 
     if (CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang" AND NOT MATCHES "AppleClang")
@@ -86,6 +108,10 @@ set(SPIRV_CROSS_STATIC         ON  CACHE BOOL "Prefer static libs" FORCE)
 add_subdirectory(3rdparty/glslang)
 add_subdirectory(3rdparty/SPIRV-Cross)
 
+set(XXHASH_BUILD_XXHSUM OFF)
+option(BUILD_SHARED_LIBS OFF)
+add_subdirectory(3rdparty/xxHash/build/cmake xxhash_build EXCLUDE_FROM_ALL)
+
 set(TRACY_ENABLE ${MOBILEGL_ENABLE_TRACY} CACHE BOOL "Enable Tracy, this is an internal variable" FORCE)
 
 if (TRACY_ENABLE)
@@ -103,7 +129,9 @@ set(SOURCE_FILES
 
     MobileGL/MG_Util/Debug/Log.cpp
 
+    MobileGL/MG_Util/Math/VectorTypes.cpp
     MobileGL/MG_Util/Metrics/TextureMetrics.cpp
+
     MobileGL/MG_Util/Metrics/BufferMetrics.cpp
 
     MobileGL/MG_Util/Converters/GLToStr/GLEnumConverter.cpp
@@ -185,6 +213,7 @@ set(SOURCE_FILES
     MobileGL/MG_Backend/DirectVulkan/Renderer/PipelineManager.cpp
     MobileGL/MG_Backend/DirectVulkan/Renderer/FrameContext.cpp
     MobileGL/MG_Backend/DirectVulkan/Renderer/VulkanRenderer.cpp
+    MobileGL/MG_Backend/DirectVulkan/Renderer/ProgramManager.cpp
 
     MobileGL/MG_State/GLState/Core.cpp
     MobileGL/MG_State/GLState/ErrorState/Error.cpp
@@ -218,6 +247,7 @@ set(MOBILEGL_LINK_LIBRARIES
         spirv-cross-c
         SPIRV-Tools-opt
         SPIRV-Tools
+        xxHash::xxhash
 )
 
 set(MOBILEGL_INCLUDE_DIR
@@ -256,32 +286,34 @@ target_link_libraries(${CMAKE_PROJECT_NAME}
     ${MOBILEGL_LINK_LIBRARIES}
 )
 
-add_library(${CMAKE_PROJECT_NAME}_s STATIC 
-    ${SOURCE_FILES}
-)
-
-if (CMAKE_BUILD_TYPE STREQUAL "Debug")
-    set_target_properties(${CMAKE_PROJECT_NAME}_s PROPERTIES
-        C_VISIBILITY_PRESET default
-        CXX_VISIBILITY_PRESET default
-        VISIBILITY_INLINES_HIDDEN OFF
+if(NOT ANDROID)
+    add_library(${CMAKE_PROJECT_NAME}_s STATIC 
+        ${SOURCE_FILES}
     )
-else()
-    set_target_properties(${CMAKE_PROJECT_NAME}_s PROPERTIES
-        C_VISIBILITY_PRESET hidden
-        CXX_VISIBILITY_PRESET hidden
-        VISIBILITY_INLINES_HIDDEN ON
+
+    if (CMAKE_BUILD_TYPE STREQUAL "Debug")
+        set_target_properties(${CMAKE_PROJECT_NAME}_s PROPERTIES
+            C_VISIBILITY_PRESET default
+            CXX_VISIBILITY_PRESET default
+            VISIBILITY_INLINES_HIDDEN OFF
+        )
+    else()
+        set_target_properties(${CMAKE_PROJECT_NAME}_s PROPERTIES
+            C_VISIBILITY_PRESET hidden
+            CXX_VISIBILITY_PRESET hidden
+            VISIBILITY_INLINES_HIDDEN ON
+        )
+    endif()
+
+    target_include_directories(${CMAKE_PROJECT_NAME}_s PUBLIC
+        ${MOBILEGL_INCLUDE_DIR}
+    )
+
+    target_link_libraries(${CMAKE_PROJECT_NAME}_s
+        PRIVATE
+        ${MOBILEGL_LINK_LIBRARIES}
     )
 endif()
-
-target_include_directories(${CMAKE_PROJECT_NAME}_s PUBLIC
-    ${MOBILEGL_INCLUDE_DIR}
-)
-
-target_link_libraries(${CMAKE_PROJECT_NAME}_s
-    PRIVATE
-    ${MOBILEGL_LINK_LIBRARIES}
-)
 
 if (TRACY_ENABLE)
     target_link_libraries(${CMAKE_PROJECT_NAME} PUBLIC Tracy::TracyClient)
@@ -296,14 +328,17 @@ if (ANDROID)
         log
         vulkan
     )
-    target_link_libraries(${CMAKE_PROJECT_NAME}_s PUBLIC
-        android
-        log
-        vulkan
-    )
 endif()
 
 if (NOT ANDROID)
+    find_package(Vulkan)
+    if (Vulkan_FOUND)
+        target_link_libraries(${CMAKE_PROJECT_NAME} PUBLIC Vulkan::Vulkan Vulkan::Headers)
+        target_link_libraries(${CMAKE_PROJECT_NAME}_s PUBLIC Vulkan::Vulkan Vulkan::Headers)
+        target_include_directories(${CMAKE_PROJECT_NAME} PUBLIC ${Vulkan_INCLUDE_DIR})
+        target_include_directories(${CMAKE_PROJECT_NAME}_s PUBLIC ${Vulkan_INCLUDE_DIR})
+    endif ()
+
     if (MOBILEGL_BUILD_TEST)
         add_subdirectory(MobileGL/MG_Test)
     endif()
