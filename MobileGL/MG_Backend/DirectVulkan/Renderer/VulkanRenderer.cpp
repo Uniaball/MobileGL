@@ -13,8 +13,45 @@
 #include "FrameContext.h"
 
 namespace MobileGL::MG_Backend::DirectVulkan {
-    VulkanRenderer::VulkanRenderer(NativeWindowType window, const RendererConfig& cfg) : Window(window), Config(cfg) {
-        Ctx = std::make_unique<VulkanContext>();
+    VkBool32 VulkanRenderer::DebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+                                           VkDebugUtilsMessageTypeFlagsEXT messageType,
+                                           const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData) {
+        auto typeToString = [](VkDebugUtilsMessageTypeFlagsEXT messageType) {
+            switch (messageType) {
+                case VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT:
+                    return "General";
+                case VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT:
+                    return "Validation";
+                case VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT:
+                    return "Performance";
+                case VK_DEBUG_UTILS_MESSAGE_TYPE_DEVICE_ADDRESS_BINDING_BIT_EXT:
+                    return "DeviceAddressBinding";
+                default:
+                    return "Other";
+            }
+        };
+
+        switch (messageSeverity) {
+            case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT:
+                MGLOG_E("Vulkan Debug: [%s] %s", typeToString(messageType), pCallbackData->pMessage);
+                break;
+            case VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT:
+                MGLOG_W("Vulkan Debug: [%s] %s", typeToString(messageType), pCallbackData->pMessage);
+                break;
+            case VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT:
+                MGLOG_I("Vulkan Debug: [%s] %s", typeToString(messageType), pCallbackData->pMessage);
+                break;
+            case VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT:
+                MGLOG_D("Vulkan Debug: [%s] %s", typeToString(messageType), pCallbackData->pMessage);
+                break;
+            default:
+                break;
+            }
+        return VK_FALSE;
+    }
+
+    VulkanRenderer::VulkanRenderer(NativeWindowType window, const RendererConfig& cfg) : m_window(window), m_config(cfg) {
+        Initialize();
     }
 
     VulkanRenderer::~VulkanRenderer() {
@@ -22,270 +59,257 @@ namespace MobileGL::MG_Backend::DirectVulkan {
     }
 
     void VulkanRenderer::Initialize() {
-        Ctx->Initialize(Window, Config.AppName);
-
-        Swapchain = std::make_unique<SwapchainManager>(*Ctx);
-        Swapchain->Initialize();
-
-        CreateRenderPass();
-
-        PipelineMgr = std::make_unique<PipelineManager>(*Ctx);
-
-        CreateCommandPool();
-        CreateFrameResources();
-
-        FrameBegin();
+        CreateInstance();
+        PickPhysicalDevice();
+        CreateLogicalDevice();
         MGLOG_D("VulkanRenderer initialized");
     }
 
     void VulkanRenderer::Shutdown() {
-        if (!Ctx) return;
+        if (m_device != VK_NULL_HANDLE)
+            vkDestroyDevice(m_device, nullptr);
 
-        vkDeviceWaitIdle(Ctx->GetDevice());
+        if (m_debugMessenger != VK_NULL_HANDLE)
+            DestroyDebugMessenger();
 
-        DestroyFrameResources();
-        DestroyCommandPool();
-
-        if (PipelineMgr) {
-            PipelineMgr->Cleanup();
-            PipelineMgr.reset();
-        }
-        DestroyRenderPass();
-        if (Swapchain) {
-            Swapchain->Cleanup();
-            Swapchain.reset();
-        }
-        if (Ctx) {
-            Ctx->Shutdown();
-            Ctx.reset();
-        }
-        MGLOG_D("VulkanRenderer shutdown");
+        DestroyInstance();
+        MGLOG_D("VulkanRenderer shut down completed");
     }
 
-    void VulkanRenderer::CreateRenderPass() {
-        VkAttachmentDescription color{};
-        color.format = Swapchain->GetFormat();
-        color.samples = VK_SAMPLE_COUNT_1_BIT;
-        color.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-        color.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-        color.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        color.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    void VulkanRenderer::Render() {
 
-        VkAttachmentReference colorRef{0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
-        VkSubpassDescription sub{};
-        sub.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-        sub.colorAttachmentCount = 1;
-        sub.pColorAttachments = &colorRef;
-
-        VkRenderPassCreateInfo rpci{VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO};
-        rpci.attachmentCount = 1;
-        rpci.pAttachments = &color;
-        rpci.subpassCount = 1;
-        rpci.pSubpasses = &sub;
-
-        VK_VERIFY(vkCreateRenderPass(Ctx->GetDevice(), &rpci, nullptr, &RenderPass), "vkCreateRenderPass");
-
-        // Create framebuffers now (use swapchain imageviews)
-        const auto& imageViews = Swapchain->GetImageViews();
-        std::vector<VkFramebuffer> fbs;
-        fbs.reserve(imageViews.size());
-        for (auto iv : imageViews) {
-            VkImageView attachments[] = {iv};
-            VkFramebufferCreateInfo fbci{VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
-            fbci.renderPass = RenderPass;
-            fbci.attachmentCount = 1;
-            fbci.pAttachments = attachments;
-            fbci.width = Swapchain->GetExtent().width;
-            fbci.height = Swapchain->GetExtent().height;
-            fbci.layers = 1;
-            VkFramebuffer fb;
-            VK_VERIFY(vkCreateFramebuffer(Ctx->GetDevice(), &fbci, nullptr, &fb), "vkCreateFramebuffer");
-            fbs.push_back(fb);
-        }
-        Swapchain->SetFramebuffers(std::move(fbs));
-        MGLOG_D("RenderPass created and framebuffers set");
-    }
-
-    void VulkanRenderer::DestroyRenderPass() {
-        if (RenderPass != VK_NULL_HANDLE) {
-            vkDestroyRenderPass(Ctx->GetDevice(), RenderPass, nullptr);
-            RenderPass = VK_NULL_HANDLE;
-        }
-    }
-
-    void VulkanRenderer::CreateCommandPool() {
-        VkCommandPoolCreateInfo cpci{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
-        cpci.queueFamilyIndex = Ctx->GetGraphicsQueueFamily();
-        cpci.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-        VK_VERIFY(vkCreateCommandPool(Ctx->GetDevice(), &cpci, nullptr, &CommandPool), "vkCreateCommandPool");
-    }
-
-    void VulkanRenderer::DestroyCommandPool() {
-        if (CommandPool != VK_NULL_HANDLE) {
-            vkDestroyCommandPool(Ctx->GetDevice(), CommandPool, nullptr);
-            CommandPool = VK_NULL_HANDLE;
-        }
-    }
-
-    void VulkanRenderer::CreateFrameResources() {
-        uint32_t imageCount = static_cast<uint32_t>(Swapchain->GetImageViews().size());
-        if (imageCount == 0) throw RuntimeError("Swapchain has zero images");
-        uint32_t frames = std::min<uint32_t>(Config.MaxFramesInFlight, imageCount);
-        Frames.clear();
-        for (uint32_t i = 0; i < frames; ++i) {
-            auto fr = std::make_unique<FrameContext>();
-            fr->Initialize(*Ctx, CommandPool);
-            Frames.push_back(std::move(fr));
-        }
-        CurrentFrame = 0;
-        MGLOG_D("FrameResources created: %u", (uint32_t)Frames.size());
-    }
-
-    void VulkanRenderer::DestroyFrameResources() {
-        for (auto& f : Frames) {
-            if (f) f->Cleanup(*Ctx);
-        }
-        Frames.clear();
-    }
-
-    void VulkanRenderer::RecordFrameCommandBuffer(FrameContext& frame, uint32_t imageIndex) {
-        // Begin
-        VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
-        VK_VERIFY(vkBeginCommandBuffer(frame.CommandBuffer, &bi), "vkBeginCommandBuffer");
-
-        VkClearValue clear{};
-        clear.color = {{0.0f, 0.0f, 0.0f, 1.0f}};
-        VkRenderPassBeginInfo rpbi{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
-        rpbi.renderPass = RenderPass;
-        rpbi.framebuffer = Swapchain->GetFramebuffers()[imageIndex];
-        rpbi.renderArea.offset = {0, 0};
-        rpbi.renderArea.extent = Swapchain->GetExtent();
-        rpbi.clearValueCount = 1;
-        rpbi.pClearValues = &clear;
-
-        vkCmdBeginRenderPass(frame.CommandBuffer, &rpbi, VK_SUBPASS_CONTENTS_INLINE);
-
-        for (auto& kv : RenderCallbacks) {
-            if (kv.second) {
-                kv.second(frame.CommandBuffer, imageIndex, Swapchain->GetExtent());
-            }
-        }
-
-        vkCmdEndRenderPass(frame.CommandBuffer);
-        VK_VERIFY(vkEndCommandBuffer(frame.CommandBuffer), "vkEndCommandBuffer");
-    }
-
-    void VulkanRenderer::RecreateSwapchainIfNeeded() {
-        vkDeviceWaitIdle(Ctx->GetDevice());
-        DestroyFrameResources();
-        DestroyRenderPass();
-        Swapchain->Recreate();
-        CreateRenderPass();
-        CreateFrameResources();
-    }
-
-    // Wait fence & Acquire image & Record commands & Submit
-    void VulkanRenderer::RenderFrame() {
-        if (!Ctx) throw RuntimeError("Renderer not initialized");
-        FrameContext& frame = *Frames[CurrentFrame];
-
-        // Wait fence and reset
-        VK_VERIFY(vkWaitForFences(Ctx->GetDevice(), 1, &frame.InFlightFence, VK_TRUE, UINT64_MAX), "vkWaitForFences");
-        VK_VERIFY(vkResetFences(Ctx->GetDevice(), 1, &frame.InFlightFence), "vkResetFences");
-
-        // Record commands
-        VK_VERIFY(vkResetCommandBuffer(frame.CommandBuffer, 0), "vkResetCommandBuffer");
-        RecordFrameCommandBuffer(frame, frame.CurrentImageIndex);
-
-        // Submit
-        VkSubmitInfo si{VK_STRUCTURE_TYPE_SUBMIT_INFO};
-        VkSemaphore waitSemaphores[] = {frame.ImageAvailable};
-        VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
-        si.waitSemaphoreCount = 1;
-        si.pWaitSemaphores = waitSemaphores;
-        si.pWaitDstStageMask = waitStages;
-        si.commandBufferCount = 1;
-        si.pCommandBuffers = &frame.CommandBuffer;
-        VkSemaphore signalSemaphores[] = {frame.RenderFinished};
-        si.signalSemaphoreCount = 1;
-        si.pSignalSemaphores = signalSemaphores;
-
-        VK_VERIFY(vkQueueSubmit(Ctx->GetGraphicsQueue(), 1, &si, frame.InFlightFence), "vkQueueSubmit");
-    }
-
-    void VulkanRenderer::FrameBegin() {
-        FrameContext& frame = *Frames[CurrentFrame];
-
-        // Acquire image
-        auto& imagesInFlight = Swapchain->GetImagesInFlight();
-        Uint32 imageIndex = 0;
-        VkResult res = vkAcquireNextImageKHR(Ctx->GetDevice(), Swapchain->GetSwapchain(), UINT64_MAX,
-                                             frame.ImageAvailable, VK_NULL_HANDLE, &imageIndex);
-        if (imagesInFlight[imageIndex] != VK_NULL_HANDLE) {
-            vkWaitForFences(Ctx->GetDevice(), 1, &imagesInFlight[imageIndex], VK_TRUE, UINT64_MAX);
-        }
-        imagesInFlight[imageIndex] = frame.InFlightFence;
-        frame.CurrentImageIndex = imageIndex;
-        if (res == VK_ERROR_OUT_OF_DATE_KHR) {
-            MGLOG_D("vkAcquireNextImageKHR: OUT_OF_DATE -> recreate");
-            RecreateSwapchainIfNeeded();
-            return;
-        }
-        VK_VERIFY(res, "vkAcquireNextImageKHR");
     }
 
     void VulkanRenderer::Present() {
-        if (!Ctx) throw RuntimeError("Renderer not initialized");
-        FrameContext& frame = *Frames[CurrentFrame];
 
-        // Present
-        VkPresentInfoKHR pi{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
-        VkSemaphore signalSemaphores[] = {frame.RenderFinished};
-        pi.waitSemaphoreCount = 1;
-        pi.pWaitSemaphores = signalSemaphores;
-        VkSwapchainKHR scs[] = {Swapchain->GetSwapchain()};
-        pi.swapchainCount = 1;
-        pi.pSwapchains = scs;
-        pi.pImageIndices = &frame.CurrentImageIndex;
-        VkResult pres = vkQueuePresentKHR(Ctx->GetGraphicsQueue(), &pi);
-        if (pres == VK_ERROR_OUT_OF_DATE_KHR || pres == VK_SUBOPTIMAL_KHR) {
-            MGLOG_D("vkQueuePresentKHR: out_of_date/suboptimal -> recreate");
-            RecreateSwapchainIfNeeded();
+    }
+
+    void VulkanRenderer::CreateInstance() {
+        m_extensions = EnumerateInstanceExtensions();
+        MGLOG_I("Got %d Vulkan instance extensions: ", m_extensions.size());
+        for (auto& extension : m_extensions) {
+            MGLOG_I("    %s (r.%u)", extension.extensionName, extension.specVersion);
+        }
+
+        Bool validationLayerAvailable = CheckValidationLayerSupport();
+        MGLOG_D("Validation layers %s.", validationLayerAvailable ? "available" : "not available");
+        MGLOG_D("Validation layers %s.", m_config.EnableValidationLayers ? "requested" : "not requested");
+
+        if (m_config.EnableValidationLayers && !validationLayerAvailable) {
+            MOBILEGL_ASSERT(false, "Validation layers requested but not available!");
+        }
+
+        m_validationLayersEnabled = m_config.EnableValidationLayers && validationLayerAvailable;
+
+        // ---------------- App info -------------------
+        VkApplicationInfo appInfo = {};
+        appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+        appInfo.pApplicationName = m_config.AppName.c_str();
+        appInfo.applicationVersion = VK_MAKE_VERSION(m_config.CacheVersion, 0, 0);
+        appInfo.pEngineName = "MobileGL";
+        appInfo.engineVersion = VK_MAKE_VERSION(m_config.Version.Major, m_config.Version.Minor, m_config.Version.Patch);
+#ifdef VK_USE_PLATFORM_WIN32_KHR
+        appInfo.apiVersion = VK_API_VERSION_1_3;
+#else
+        appInfo.apiVersion = VK_API_VERSION_1_1;
+#endif
+
+
+        // ---------------- Instance info -------------------
+        VkInstanceCreateInfo instanceInfo = {};
+        instanceInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+        instanceInfo.pApplicationInfo = &appInfo;
+
+        // Extensions
+        Vector<const char*> exts = {VK_KHR_SURFACE_EXTENSION_NAME,
+#ifdef VK_USE_PLATFORM_ANDROID_KHR
+      VK_KHR_ANDROID_SURFACE_EXTENSION_NAME
+#elif defined VK_USE_PLATFORM_WIN32_KHR
+      VK_KHR_WIN32_SURFACE_EXTENSION_NAME
+#else
+#warning "VulkanContext::CreateInstance: VK_KHR_*_surface extension not defined on this platform"
+#endif
+}; // TODO: support more platforms
+
+        if (m_validationLayersEnabled) {
+            exts.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+        }
+
+        instanceInfo.enabledExtensionCount = exts.size();
+        instanceInfo.ppEnabledExtensionNames = exts.data();
+
+        auto debugMessengerCreateInfo = PopulateDebugMessengerCreateInfo();
+        // Layers
+        if (m_validationLayersEnabled) {
+            MGLOG_I("Enabling validation layer.");
+            instanceInfo.enabledLayerCount = static_cast<uint32_t>(std::size(s_validationLayerNames));
+            instanceInfo.ppEnabledLayerNames = s_validationLayerNames;
+            instanceInfo.pNext = &debugMessengerCreateInfo;
         } else {
-            VK_VERIFY(pres, "vkQueuePresentKHR");
+            instanceInfo.enabledLayerCount = 0;
+            instanceInfo.pNext = nullptr;
         }
 
-        CurrentFrame = (CurrentFrame + 1) % Frames.size();
+        VK_VERIFY(vkCreateInstance(&instanceInfo, nullptr, &m_instance), "vkCreateInstance failed");
 
-        FrameBegin();
+        if (m_validationLayersEnabled)
+            VK_VERIFY(SetupDebugMessenger());
     }
 
-    void VulkanRenderer::RegisterRenderCallback(const std::string& name, RenderCallback cb) {
-        auto it = std::find_if(RenderCallbacks.begin(), RenderCallbacks.end(),
-                               [&](const auto& kv) { return kv.first == name; });
-        if (it != RenderCallbacks.end()) {
-            MGLOG_W("Render callback '%s' already registered", name.c_str());
-            return;
+    void VulkanRenderer::DestroyInstance() {
+        if (m_instance != VK_NULL_HANDLE) {
+            vkDestroyInstance(m_instance, nullptr);
+            m_instance = VK_NULL_HANDLE;
         }
-        RenderCallbacks.emplace_back(name, std::move(cb));
     }
 
-    void VulkanRenderer::UnregisterRenderCallback(const std::string& name) {
-        RenderCallbacks.erase(std::remove_if(RenderCallbacks.begin(), RenderCallbacks.end(),
-                                             [&](const auto& kv) { return kv.first == name; }),
-                              RenderCallbacks.end());
+    VkResult VulkanRenderer::SetupDebugMessenger() {
+        auto createInfo = PopulateDebugMessengerCreateInfo();
+        auto vkCreateDebugUtilsMessengerEXT = (PFN_vkCreateDebugUtilsMessengerEXT) vkGetInstanceProcAddr(m_instance, "vkCreateDebugUtilsMessengerEXT");
+        if (!vkCreateDebugUtilsMessengerEXT)
+            return VK_ERROR_EXTENSION_NOT_PRESENT;
+        VK_VERIFY(vkCreateDebugUtilsMessengerEXT(m_instance, &createInfo, nullptr, &m_debugMessenger));
+        return VK_SUCCESS;
     }
 
-    VkPipeline VulkanRenderer::CreateGraphicsPipelineFromSpv(const std::string& key, const std::vector<uint32_t>& vsSpv,
-                                                             const std::vector<uint32_t>& fsSpv) {
-        return PipelineMgr->CreateGraphicsPipelineFromSpv(key, vsSpv, fsSpv, RenderPass, Swapchain->GetExtent());
+    VkResult VulkanRenderer::DestroyDebugMessenger() {
+        if (m_debugMessenger != VK_NULL_HANDLE) {
+            auto func = (PFN_vkDestroyDebugUtilsMessengerEXT) vkGetInstanceProcAddr(m_instance, "vkDestroyDebugUtilsMessengerEXT");
+            if (func != nullptr) {
+                func(m_instance, m_debugMessenger, nullptr);
+            } else {
+                return VK_ERROR_EXTENSION_NOT_PRESENT;
+            }
+        }
+        return VK_SUCCESS;
     }
 
-    VkExtent2D VulkanRenderer::GetExtent() const {
-        return Swapchain ? Swapchain->GetExtent() : VkExtent2D{0, 0};
+    VkDebugUtilsMessengerCreateInfoEXT VulkanRenderer::PopulateDebugMessengerCreateInfo() {
+        VkDebugUtilsMessengerCreateInfoEXT createInfo{};
+        createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+        createInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+        createInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+        createInfo.pfnUserCallback = DebugCallback;
+        createInfo.pUserData = this;
+        return createInfo;
     }
 
-    void VulkanRenderer::WaitIdle() {
-        if (Ctx && Ctx->GetDevice() != VK_NULL_HANDLE) vkDeviceWaitIdle(Ctx->GetDevice());
+    void VulkanRenderer::PickPhysicalDevice() {
+        Uint32 deviceCount = 0;
+        vkEnumeratePhysicalDevices(m_instance, &deviceCount, nullptr);
+        if (deviceCount == 0) {
+            MGLOG_E("No physical devices supporting Vulkan found.");
+        } else {
+            MGLOG_I("Found %d physical device(s).", deviceCount);
+        }
+
+        auto deviceTypeToStr = [](VkPhysicalDeviceType type) {
+            switch (type) {
+                case VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU:
+                    return "INTEGRATED_GPU";
+                case VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU:
+                    return "DISCRETE_GPU";
+                case VK_PHYSICAL_DEVICE_TYPE_CPU:
+                    return "CPU";
+                case VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU:
+                    return "VIRTUAL_GPU";
+                case VK_PHYSICAL_DEVICE_TYPE_OTHER:
+                    return "OTHER";
+                default:
+                    return "UNKNOWN";
+            }
+        };
+
+        Vector<VkPhysicalDevice> devices(deviceCount);
+        vkEnumeratePhysicalDevices(m_instance, &deviceCount, devices.data());
+        for (const auto& device : devices) {
+            VkPhysicalDeviceProperties deviceProperties;
+            vkGetPhysicalDeviceProperties(device, &deviceProperties);
+            auto apiVersion = deviceProperties.apiVersion;
+            MGLOG_I("    %s (Vulkan %d.%d.%d, %s)",
+                deviceProperties.deviceName,
+                VK_VERSION_MAJOR(apiVersion), VK_VERSION_MINOR(apiVersion), VK_VERSION_PATCH(apiVersion),
+                deviceTypeToStr(deviceProperties.deviceType));
+            // TODO: Properly check device eligibility
+            Int gfxQueueIndex = GetGraphicsQueueFamilyIndexOfPhysicalDevice(device);
+            if (m_physicalDevice == VK_NULL_HANDLE && gfxQueueIndex != -1) {
+                m_physicalDevice = device;
+                m_graphicsQueueFamilyIndex = gfxQueueIndex;
+                MGLOG_I("Physical device picked.");
+            }
+        }
+
+        MOBILEGL_ASSERT(!devices.empty(), "No physical devices found.");
+        if (m_physicalDevice == VK_NULL_HANDLE) {
+            m_physicalDevice = devices[0];
+            MGLOG_I("No suitable physical device picked yet, defaulting to device 0.");
+        }
     }
+
+    void VulkanRenderer::CreateLogicalDevice() {
+        VkDeviceQueueCreateInfo queueCreateInfo{};
+        queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+        queueCreateInfo.queueFamilyIndex = m_graphicsQueueFamilyIndex;
+        queueCreateInfo.queueCount = 1;
+        Float queuePriority = 1.0f;
+        queueCreateInfo.pQueuePriorities = &queuePriority;
+
+        VkPhysicalDeviceFeatures deviceFeatures{};
+        // TODO: query and make use of device features
+
+        VkDeviceCreateInfo deviceCreateInfo{};
+        deviceCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+        deviceCreateInfo.pQueueCreateInfos = &queueCreateInfo;
+        deviceCreateInfo.queueCreateInfoCount = 1;
+        deviceCreateInfo.pEnabledFeatures = &deviceFeatures;
+        if (m_validationLayersEnabled) {
+            deviceCreateInfo.enabledLayerCount = static_cast<uint32_t>(std::size(s_validationLayerNames));
+            deviceCreateInfo.ppEnabledLayerNames = s_validationLayerNames;
+        } else {
+            deviceCreateInfo.enabledLayerCount = 0;
+        }
+        VK_VERIFY(vkCreateDevice(m_physicalDevice, &deviceCreateInfo, nullptr, &m_device), "vkCreateDevice");
+        vkGetDeviceQueue(m_device, m_graphicsQueueFamilyIndex, 0, &m_graphicsQueue);
+    }
+
+    Int VulkanRenderer::GetGraphicsQueueFamilyIndexOfPhysicalDevice(VkPhysicalDevice device) {
+        Uint32 queueFamilyCount = 0;
+        vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
+
+        Vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
+        vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data());
+
+        for (Int i = 0; i < queueFamilies.size(); ++i) {
+            if (queueFamilies[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    Vector<VkExtensionProperties> VulkanRenderer::EnumerateInstanceExtensions() {
+        Uint32 extensionCount = 0;
+        VK_VERIFY(vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, nullptr));
+        Vector<VkExtensionProperties> extensions(extensionCount);
+        vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, extensions.data());
+        return extensions;
+    }
+
+    Bool VulkanRenderer::CheckValidationLayerSupport() {
+        Uint32 layerCount = 0;
+        VK_VERIFY(vkEnumerateInstanceLayerProperties(&layerCount, nullptr));
+
+        Vector<VkLayerProperties> layers(layerCount);
+        VK_VERIFY(vkEnumerateInstanceLayerProperties(&layerCount, layers.data()));
+
+        for (const char* layerName : s_validationLayerNames) {
+            for (const auto& layerProperties : layers) {
+                if (strcmp(layerName, layerProperties.layerName) == 0) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
 } // namespace MobileGL::MG_Backend::DirectVulkan

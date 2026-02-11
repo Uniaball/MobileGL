@@ -7,7 +7,14 @@
 // End of Source File Header
 
 #pragma once
+#include "Config.h"
 #include <Includes.h>
+
+#define VK_VERIFY(expr, ...)                                                                                           \
+    do {                                                                                                               \
+        VkResult _vk_verify_result = (expr);                                                                           \
+        MOBILEGL_ASSERT(_vk_verify_result == VK_SUCCESS, "Vulkan error %d at %s:%d" __VA_OPT__(" - ") __VA_ARGS__, _vk_verify_result, __FILE__, __LINE__);  \
+    } while (0)
 
 namespace MobileGL::MG_Backend::DirectVulkan {
     class VulkanContext;
@@ -20,6 +27,9 @@ namespace MobileGL::MG_Backend::DirectVulkan {
     struct RendererConfig {
         Uint32 MaxFramesInFlight = 2;
         String AppName = "MobileGL-VulkanRenderer";
+        Version Version = MG_Config::CoreVersion;
+        Uint64 CacheVersion = MG_Config::CacheVersion;
+        Bool EnableValidationLayers = true;
     };
 
     class VulkanRenderer {
@@ -30,45 +40,42 @@ namespace MobileGL::MG_Backend::DirectVulkan {
         void Initialize();
         void Shutdown();
 
-        void RenderFrame();
+        void Render();
         void Present();
 
-        void RegisterRenderCallback(const std::string& name, RenderCallback cb);
-        void UnregisterRenderCallback(const std::string& name);
-
-        VkPipeline CreateGraphicsPipelineFromSpv(const std::string& key, const std::vector<uint32_t>& vsSpv,
-                                                 const std::vector<uint32_t>& fsSpv);
-
-        VkExtent2D GetExtent() const;
-
-        void WaitIdle();
-
     private:
-        NativeWindowType Window = 0;
-        RendererConfig Config;
+        NativeWindowType m_window = 0;
+        RendererConfig m_config;
 
-        std::unique_ptr<VulkanContext> Ctx;
-        std::unique_ptr<SwapchainManager> Swapchain;
-        std::unique_ptr<PipelineManager> PipelineMgr;
+        // Vulkan objects
+        Bool m_validationLayersEnabled = false;
+        Vector<VkExtensionProperties> m_extensions;
+        VkInstance m_instance = VK_NULL_HANDLE;
+        VkDebugUtilsMessengerEXT m_debugMessenger = VK_NULL_HANDLE;
+        VkPhysicalDevice m_physicalDevice = VK_NULL_HANDLE;
+        Int m_graphicsQueueFamilyIndex = -1;
+        VkDevice m_device = VK_NULL_HANDLE;
+        VkQueue m_graphicsQueue = VK_NULL_HANDLE;
 
-        VkRenderPass RenderPass = VK_NULL_HANDLE;
-        VkCommandPool CommandPool = VK_NULL_HANDLE;
+        void CreateInstance();
+        void DestroyInstance();
+        VkResult SetupDebugMessenger();
+        VkResult DestroyDebugMessenger();
+        VkDebugUtilsMessengerCreateInfoEXT PopulateDebugMessengerCreateInfo();
+        void PickPhysicalDevice();
+        void CreateLogicalDevice();
 
-        std::vector<std::unique_ptr<FrameContext>> Frames;
-        Uint32 CurrentFrame = 0;
+        static Int GetGraphicsQueueFamilyIndexOfPhysicalDevice(VkPhysicalDevice device);
+        static Vector<VkExtensionProperties> EnumerateInstanceExtensions();
+        static constexpr const char* s_validationLayerNames[] = {
+            "VK_LAYER_KHRONOS_validation"
+        };
+        static Bool CheckValidationLayerSupport();
 
-        // Render callbacks map
-        std::vector<std::pair<std::string, RenderCallback>> RenderCallbacks;
-
-        // Internals
-        void CreateRenderPass();
-        void DestroyRenderPass();
-        void CreateCommandPool();
-        void DestroyCommandPool();
-        void CreateFrameResources();
-        void DestroyFrameResources();
-        void RecordFrameCommandBuffer(FrameContext& frame, uint32_t imageIndex);
-        void RecreateSwapchainIfNeeded();
-        void FrameBegin();
+        static VKAPI_ATTR VkBool32 VKAPI_CALL DebugCallback(
+            VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+            VkDebugUtilsMessageTypeFlagsEXT messageType,
+            const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
+            void* pUserData);
     };
 } // namespace MobileGL::MG_Backend::DirectVulkan
