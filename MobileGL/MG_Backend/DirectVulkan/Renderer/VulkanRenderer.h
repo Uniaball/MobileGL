@@ -16,6 +16,8 @@
         MOBILEGL_ASSERT(_vk_verify_result == VK_SUCCESS, "Vulkan error %d at %s:%d" __VA_OPT__(" - ") __VA_ARGS__, _vk_verify_result, __FILE__, __LINE__);  \
     } while (0)
 
+#define ENUM_STR_CASE(c) case c: return #c;
+
 namespace MobileGL::MG_Backend::DirectVulkan {
     class VulkanContext;
     class SwapchainManager;
@@ -44,6 +46,34 @@ namespace MobileGL::MG_Backend::DirectVulkan {
         void Present();
 
     private:
+        struct QueueFamilyIndices {
+            Int32 graphicsFamily = -1;
+            Int32 presentFamily = -1;
+        };
+
+        struct SwapchainCapabilities {
+            VkSurfaceCapabilitiesKHR capabilities;
+            Vector<VkSurfaceFormatKHR> surfaceFormats;
+            Vector<VkPresentModeKHR> presentModes;
+
+            Bool IsComplete() const {
+                return !surfaceFormats.empty() && !presentModes.empty();
+            }
+        };
+
+        struct PhysicalDevice {
+            QueueFamilyIndices queueFamilies;
+            VkPhysicalDeviceProperties properties;
+            SwapchainCapabilities swapchainCapabilities;
+            VkPhysicalDevice handle = VK_NULL_HANDLE;
+
+            Bool IsComplete() const {
+                return handle != VK_NULL_HANDLE &&
+                    queueFamilies.graphicsFamily != -1 &&
+                    queueFamilies.presentFamily != -1;
+            }
+        };
+
         NativeWindowType m_window = 0;
         RendererConfig m_config;
 
@@ -52,25 +82,43 @@ namespace MobileGL::MG_Backend::DirectVulkan {
         Vector<VkExtensionProperties> m_extensions;
         VkInstance m_instance = VK_NULL_HANDLE;
         VkDebugUtilsMessengerEXT m_debugMessenger = VK_NULL_HANDLE;
-        VkPhysicalDevice m_physicalDevice = VK_NULL_HANDLE;
-        Int m_graphicsQueueFamilyIndex = -1;
+        PhysicalDevice m_physicalDevice;
+        // VkPhysicalDevice m_physicalDevice = VK_NULL_HANDLE;
         VkDevice m_device = VK_NULL_HANDLE;
-        VkQueue m_graphicsQueue = VK_NULL_HANDLE;
         VkSurfaceKHR m_surface = VK_NULL_HANDLE;
+        VkSwapchainKHR m_swapchain = VK_NULL_HANDLE;
+
+        // Vector<VkQueueFamilyProperties> m_queueFamilies;
+        // QueueFamilyIndices m_queueFamilyIndices;
+
+        VkQueue m_graphicsQueue = VK_NULL_HANDLE;
+        VkQueue m_presentQueue = VK_NULL_HANDLE;
 
         void CreateInstance();
-        void DestroyInstance();
         VkResult SetupDebugMessenger();
         VkResult DestroyDebugMessenger();
         VkDebugUtilsMessengerCreateInfoEXT PopulateDebugMessengerCreateInfo();
-        void PickPhysicalDevice();
-        void CreateLogicalDevice();
         void CreateSurface();
+        void PickPhysicalDevice();
+        void CreateLogicalDeviceAndQueues();
+        void CreateSwapchain();
 
-        static Int GetGraphicsQueueFamilyIndexOfPhysicalDevice(VkPhysicalDevice device);
+        static Int GetPresentQueueFamilyIndex(
+            const PhysicalDevice& physicalDevice, VkSurfaceKHR surface,
+            const Vector<VkQueueFamilyProperties>& queueFamilies, Int preferredFamilyIndex = -1);
+        static Vector<VkQueueFamilyProperties> GetQueueFamilyFromPhysicalDevice(VkPhysicalDevice device);
+        static Int GetQueueFamilyIndex(const Vector<VkQueueFamilyProperties>& queueFamilies, VkQueueFlagBits flag);
         static Vector<VkExtensionProperties> EnumerateInstanceExtensions();
+        static Bool IsNecessaryDeviceExtensionSupported(VkPhysicalDevice device);
+        static SwapchainCapabilities GetSwapchainCapabilities(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface);
+        static Bool GetMoreCapablePhysicalDevice(VkPhysicalDevice newVkDevice, VkSurfaceKHR surface, const PhysicalDevice& compareWithDevice, PhysicalDevice& outBetterDevice);
+        static VkSurfaceFormatKHR ChooseSwapchainSurfaceFormat(const Vector<VkSurfaceFormatKHR>& availableFormats);
+        static VkPresentModeKHR ChooseSwapchainPresentMode(const Vector<VkPresentModeKHR>& availablePresentModes);
         static constexpr const char* s_validationLayerNames[] = {
             "VK_LAYER_KHRONOS_validation"
+        };
+        static constexpr const char* s_deviceExtensionNames[] = {
+            VK_KHR_SWAPCHAIN_EXTENSION_NAME
         };
         static Bool CheckValidationLayerSupport();
 
