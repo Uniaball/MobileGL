@@ -8,22 +8,13 @@
 
 #pragma once
 #include "Config.h"
+#include "FrameContext.h"
+#include "SwapchainObject.h"
 #include <Includes.h>
 
-#define VK_VERIFY(expr, ...)                                                                                           \
-    do {                                                                                                               \
-        VkResult _vk_verify_result = (expr);                                                                           \
-        MOBILEGL_ASSERT(_vk_verify_result == VK_SUCCESS, "Vulkan error %d at %s:%d" __VA_OPT__(" - ") __VA_ARGS__, _vk_verify_result, __FILE__, __LINE__);  \
-    } while (0)
-
-#define ENUM_STR_CASE(c) case c: return #c;
+#include "../VkIncludes.h"
 
 namespace MobileGL::MG_Backend::DirectVulkan {
-    class VulkanContext;
-    class SwapchainManager;
-    class PipelineManager;
-    struct FrameContext;
-
     using RenderCallback = std::function<void(VkCommandBuffer cmdBuf, uint32_t imageIndex, VkExtent2D extent)>;
 
     struct RendererConfig {
@@ -45,26 +36,17 @@ namespace MobileGL::MG_Backend::DirectVulkan {
         void Render();
         void Present();
 
+        void RecreateSwapchain();
+
     private:
         struct QueueFamilyIndices {
             Int32 graphicsFamily = -1;
             Int32 presentFamily = -1;
         };
 
-        struct SwapchainCapabilities {
-            VkSurfaceCapabilitiesKHR capabilities;
-            Vector<VkSurfaceFormatKHR> surfaceFormats;
-            Vector<VkPresentModeKHR> presentModes;
-
-            Bool IsComplete() const {
-                return !surfaceFormats.empty() && !presentModes.empty();
-            }
-        };
-
         struct PhysicalDevice {
             QueueFamilyIndices queueFamilies;
             VkPhysicalDeviceProperties properties;
-            SwapchainCapabilities swapchainCapabilities;
             VkPhysicalDevice handle = VK_NULL_HANDLE;
 
             Bool IsComplete() const {
@@ -86,13 +68,24 @@ namespace MobileGL::MG_Backend::DirectVulkan {
         // VkPhysicalDevice m_physicalDevice = VK_NULL_HANDLE;
         VkDevice m_device = VK_NULL_HANDLE;
         VkSurfaceKHR m_surface = VK_NULL_HANDLE;
-        VkSwapchainKHR m_swapchain = VK_NULL_HANDLE;
+        SwapchainObject m_swapchainObject;
 
         // Vector<VkQueueFamilyProperties> m_queueFamilies;
         // QueueFamilyIndices m_queueFamilyIndices;
 
         VkQueue m_graphicsQueue = VK_NULL_HANDLE;
         VkQueue m_presentQueue = VK_NULL_HANDLE;
+
+        VkCommandPool m_commandPool = VK_NULL_HANDLE;
+
+        VkRenderPass m_renderPass = VK_NULL_HANDLE;
+        Vector<VkFramebuffer> m_framebuffers;
+
+        VkPipelineLayout m_pipelineLayout = VK_NULL_HANDLE;
+        VkPipeline m_pipeline = VK_NULL_HANDLE;
+
+        Uint m_imageIndexAcquired = 0;
+        FrameContext m_frameContext;
 
         void CreateInstance();
         VkResult SetupDebugMessenger();
@@ -102,6 +95,13 @@ namespace MobileGL::MG_Backend::DirectVulkan {
         void PickPhysicalDevice();
         void CreateLogicalDeviceAndQueues();
         void CreateSwapchain();
+        void CreateCommandPool();
+        void CreateFrameContexts();
+        void CreateDefaultRenderPass();
+        void CreateDefaultFramebuffers();
+        void PrepareDemoPipeline();
+
+        void ShutdownSwapchain();
 
         static Int GetPresentQueueFamilyIndex(
             const PhysicalDevice& physicalDevice, VkSurfaceKHR surface,
@@ -110,10 +110,11 @@ namespace MobileGL::MG_Backend::DirectVulkan {
         static Int GetQueueFamilyIndex(const Vector<VkQueueFamilyProperties>& queueFamilies, VkQueueFlagBits flag);
         static Vector<VkExtensionProperties> EnumerateInstanceExtensions();
         static Bool IsNecessaryDeviceExtensionSupported(VkPhysicalDevice device);
-        static SwapchainCapabilities GetSwapchainCapabilities(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface);
         static Bool GetMoreCapablePhysicalDevice(VkPhysicalDevice newVkDevice, VkSurfaceKHR surface, const PhysicalDevice& compareWithDevice, PhysicalDevice& outBetterDevice);
-        static VkSurfaceFormatKHR ChooseSwapchainSurfaceFormat(const Vector<VkSurfaceFormatKHR>& availableFormats);
-        static VkPresentModeKHR ChooseSwapchainPresentMode(const Vector<VkPresentModeKHR>& availablePresentModes);
+        static constexpr VkDynamicState s_dynamicStates[] = {
+            VK_DYNAMIC_STATE_VIEWPORT,
+            VK_DYNAMIC_STATE_SCISSOR
+        };
         static constexpr const char* s_validationLayerNames[] = {
             "VK_LAYER_KHRONOS_validation"
         };

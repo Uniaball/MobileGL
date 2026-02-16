@@ -7,10 +7,8 @@
 // End of Source File Header
 
 #include "VulkanRenderer.h"
-#include "VulkanContext.h"
-#include "SwapchainManager.h"
-#include "PipelineManager.h"
-#include "FrameContext.h"
+
+#include "MG_State/GLState/ProgramState/ProgramObject.h"
 
 namespace MobileGL::MG_Backend::DirectVulkan {
     VkBool32 VulkanRenderer::DebugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
@@ -18,39 +16,40 @@ namespace MobileGL::MG_Backend::DirectVulkan {
                                            const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData) {
         auto typeToString = [](VkDebugUtilsMessageTypeFlagsEXT messageType) {
             switch (messageType) {
-                case VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT:
-                    return "General";
-                case VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT:
-                    return "Validation";
-                case VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT:
-                    return "Performance";
-                case VK_DEBUG_UTILS_MESSAGE_TYPE_DEVICE_ADDRESS_BINDING_BIT_EXT:
-                    return "DeviceAddressBinding";
-                default:
-                    return "Other";
+            case VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT:
+                return "General";
+            case VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT:
+                return "Validation";
+            case VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT:
+                return "Performance";
+            case VK_DEBUG_UTILS_MESSAGE_TYPE_DEVICE_ADDRESS_BINDING_BIT_EXT:
+                return "DeviceAddressBinding";
+            default:
+                return "Other";
             }
         };
 
         switch (messageSeverity) {
-            case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT:
-                MGLOG_E("Vulkan Debug: [%s] %s", typeToString(messageType), pCallbackData->pMessage);
-                break;
-            case VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT:
-                MGLOG_W("Vulkan Debug: [%s] %s", typeToString(messageType), pCallbackData->pMessage);
-                break;
-            case VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT:
-                MGLOG_I("Vulkan Debug: [%s] %s", typeToString(messageType), pCallbackData->pMessage);
-                break;
-            case VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT:
-                MGLOG_D("Vulkan Debug: [%s] %s", typeToString(messageType), pCallbackData->pMessage);
-                break;
-            default:
-                break;
-            }
+        case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT:
+            MGLOG_E("Vulkan Debug: [%s] %s", typeToString(messageType), pCallbackData->pMessage);
+            break;
+        case VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT:
+            MGLOG_W("Vulkan Debug: [%s] %s", typeToString(messageType), pCallbackData->pMessage);
+            break;
+        case VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT:
+            MGLOG_I("Vulkan Debug: [%s] %s", typeToString(messageType), pCallbackData->pMessage);
+            break;
+        case VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT:
+            MGLOG_D("Vulkan Debug: [%s] %s", typeToString(messageType), pCallbackData->pMessage);
+            break;
+        default:
+            break;
+        }
         return VK_FALSE;
     }
 
-    VulkanRenderer::VulkanRenderer(NativeWindowType window, const RendererConfig& cfg) : m_window(window), m_config(cfg) {
+    VulkanRenderer::VulkanRenderer(NativeWindowType window, const RendererConfig& cfg)
+        : m_window(window), m_config(cfg) {
         // Initialize();
     }
 
@@ -58,19 +57,205 @@ namespace MobileGL::MG_Backend::DirectVulkan {
         Shutdown();
     }
 
+    const char* demoFS = R"(#version 460
+        layout(location = 0) in vec3 fragColor;
+        layout(location = 0) out vec4 outColor;
+        void main() {
+            outColor = vec4(fragColor, 1.0);
+        }
+)";
+    const char* demoVS = R"(#version 460
+    layout(location = 0) out vec3 fragColor;
+    vec2 positions[3] = vec2[](vec2(0.0, -0.5), vec2(0.5, 0.5), vec2(-0.5, 0.5));
+    vec3 colors[3] = vec3[](vec3(1.0, 0.0, 0.0), vec3(0.0, 1.0, 0.0), vec3(0.0, 0.0, 1.0));
+    void main() {
+        gl_Position = vec4(positions[gl_VertexID], 0.0, 1.0);
+        fragColor = colors[gl_VertexID];
+    }
+)";
+    void VulkanRenderer::PrepareDemoPipeline() {
+        MGLOG_D("PrepareDemoRes called");
+
+        // Create shader&program object
+        auto programObject = MG_State::GLState::ProgramObject(0);
+        auto vsObject = MakeShared<MG_State::GLState::ShaderObject>(ShaderStage::Vertex, 0);
+        vsObject->SetShaderSource(demoVS);
+        vsObject->Compile();
+        if (!vsObject->GetCompileStatus()) {
+            MGLOG_E("Vertex shader compilation failed: %s", vsObject->GetInfoLog().c_str());
+            return;
+        }
+        auto fsObject = MakeShared<MG_State::GLState::ShaderObject>(ShaderStage::Fragment, 1);
+        fsObject->SetShaderSource(demoFS);
+        fsObject->Compile();
+        if (!fsObject->GetCompileStatus()) {
+            MGLOG_E("Fragment shader compilation failed: %s", fsObject->GetInfoLog().c_str());
+            return;
+        }
+        programObject.AttachShader(vsObject);
+        programObject.AttachShader(fsObject);
+        programObject.Link();
+        if (!programObject.GetLinkStatus()) {
+            MGLOG_E("Program linking failed: %s", programObject.GetInfoLog().c_str());
+            return;
+        }
+
+        Vector<Uint> vsSpv;
+        Vector<Uint> fsSpv;
+
+        auto& shaderSpirvs = programObject.GetGeneratedSpirv();
+        auto& attachedShaders = programObject.GetAttachedShaders();
+        for (int index = 0; index < attachedShaders.size(); ++index) {
+            auto& shader = attachedShaders[index];
+            auto& spirvCode = shaderSpirvs[index];
+            if (shader->GetShaderStage() == ShaderStage::Vertex) {
+                vsSpv = spirvCode;
+            } else if (shader->GetShaderStage() == ShaderStage::Fragment) {
+                fsSpv = spirvCode;
+            }
+        }
+
+        VkShaderModuleCreateInfo smci{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
+        smci.codeSize = vsSpv.size() * sizeof(uint32_t);
+        smci.pCode = vsSpv.data();
+        VkShaderModule vs;
+        VK_VERIFY(vkCreateShaderModule(m_device, &smci, nullptr, &vs), "vkCreateShaderModule VS");
+
+        smci.codeSize = fsSpv.size() * sizeof(uint32_t);
+        smci.pCode = fsSpv.data();
+        VkShaderModule fs;
+        VK_VERIFY(vkCreateShaderModule(m_device, &smci, nullptr, &fs), "vkCreateShaderModule FS");
+
+        VkPipelineShaderStageCreateInfo stages[2]{};
+        stages[0] = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO};
+        stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
+        stages[0].module = vs;
+        stages[0].pName = "main";
+        stages[1] = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO};
+        stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+        stages[1].module = fs;
+        stages[1].pName = "main";
+
+        VkPipelineLayoutCreateInfo plci{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+        VK_VERIFY(vkCreatePipelineLayout(m_device, &plci, nullptr, &m_pipelineLayout), "vkCreatePipelineLayout");
+
+        // Create the rest of pipeline component
+
+        VkPipelineDynamicStateCreateInfo dynamicState{};
+        dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+        dynamicState.dynamicStateCount = static_cast<uint32_t>(std::size(s_dynamicStates));
+        dynamicState.pDynamicStates = s_dynamicStates;
+
+        VkPipelineVertexInputStateCreateInfo vertexInput{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
+        vertexInput.vertexBindingDescriptionCount = 0;
+        vertexInput.vertexAttributeDescriptionCount = 0;
+
+        VkPipelineInputAssemblyStateCreateInfo ia{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
+        ia.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+
+        VkViewport vp{};
+        vp.x = 0;
+        vp.y = 0;
+        const auto swapchainExtent = m_swapchainObject.GetExtent();
+        vp.width = (float)swapchainExtent.width;
+        vp.height = (float)swapchainExtent.height;
+        vp.minDepth = 0;
+        vp.maxDepth = 1;
+        VkRect2D scissor{{0, 0}, swapchainExtent};
+        VkPipelineViewportStateCreateInfo vpci{VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};
+        vpci.viewportCount = 1;
+        vpci.pViewports = &vp;
+        vpci.scissorCount = 1;
+        vpci.pScissors = &scissor;
+
+        VkPipelineRasterizationStateCreateInfo raster{VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
+        raster.polygonMode = VK_POLYGON_MODE_FILL;
+        raster.cullMode = VK_CULL_MODE_NONE;
+        raster.frontFace = VK_FRONT_FACE_CLOCKWISE;
+        raster.lineWidth = 1.0f;
+
+        VkPipelineMultisampleStateCreateInfo ms{VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
+        ms.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+        VkPipelineColorBlendAttachmentState colorAttach{};
+        colorAttach.colorWriteMask =
+            VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+        colorAttach.blendEnable = VK_FALSE;
+        VkPipelineColorBlendStateCreateInfo blend{VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
+        blend.attachmentCount = 1;
+        blend.pAttachments = &colorAttach;
+
+        // Create Pipeline
+        VkGraphicsPipelineCreateInfo gpi{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
+        gpi.stageCount = 2;
+        gpi.pStages = stages;
+        gpi.pVertexInputState = &vertexInput;
+        gpi.pInputAssemblyState = &ia;
+        gpi.pViewportState = &vpci;
+        gpi.pRasterizationState = &raster;
+        gpi.pMultisampleState = &ms;
+        gpi.pColorBlendState = &blend;
+        gpi.pDynamicState = &dynamicState;
+        gpi.layout = m_pipelineLayout;
+        gpi.renderPass = m_renderPass;
+        gpi.subpass = 0;
+
+        VK_VERIFY(vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &gpi, nullptr, &m_pipeline),
+                  "vkCreateGraphicsPipelines");
+
+        vkDestroyShaderModule(m_device, vs, nullptr);
+        vkDestroyShaderModule(m_device, fs, nullptr);
+
+        MGLOG_I("PrepareDemoPipeline completed");
+    }
+
+    void VulkanRenderer::CreateFrameContexts() {
+        VK_VERIFY(m_frameContext.Initialize(m_device, m_commandPool, m_config.MaxFramesInFlight),
+                  "CreateFrameContexts");
+        MGLOG_I("CreateFrameContexts completed");
+    }
+
     void VulkanRenderer::Initialize() {
         CreateInstance();
         CreateSurface();
         PickPhysicalDevice();
         CreateLogicalDeviceAndQueues();
-        CreateSwapchain();
+
+        CreateCommandPool();
+
+        RecreateSwapchain();
+
+        PrepareDemoPipeline();
+        CreateFrameContexts();
+
+        // Prime the first frame so Render() always targets an acquired swapchain image.
+        VK_VERIFY(vkWaitForFences(m_device, 1, &m_frameContext.GetCurrentImageInFlightFence(), VK_TRUE, UINT64_MAX));
+        VK_VERIFY(vkResetFences(m_device, 1, &m_frameContext.GetCurrentImageInFlightFence()));
+        VK_VERIFY(vkAcquireNextImageKHR(m_device, m_swapchainObject.GetHandle(), UINT64_MAX,
+                                        m_frameContext.GetCurrentImageAvailableSemaphore(), VK_NULL_HANDLE,
+                                        &m_imageIndexAcquired));
+
         MGLOG_D("VulkanRenderer initialized");
     }
 
     void VulkanRenderer::Shutdown() {
-        if (m_swapchain != VK_NULL_HANDLE) {
-            vkDestroySwapchainKHR(m_device, m_swapchain, nullptr);
-            m_swapchain = VK_NULL_HANDLE;
+        VK_VERIFY(vkDeviceWaitIdle(m_device));
+
+        m_frameContext.Destroy(m_device, m_commandPool);
+
+        if (m_pipeline != VK_NULL_HANDLE) {
+            vkDestroyPipeline(m_device, m_pipeline, nullptr);
+        }
+
+        if (m_pipelineLayout != VK_NULL_HANDLE) {
+            vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
+        }
+
+        ShutdownSwapchain();
+
+        if (m_commandPool != VK_NULL_HANDLE) {
+            vkDestroyCommandPool(m_device, m_commandPool, nullptr);
+            m_commandPool = VK_NULL_HANDLE;
         }
 
         if (m_device != VK_NULL_HANDLE) {
@@ -96,11 +281,155 @@ namespace MobileGL::MG_Backend::DirectVulkan {
     }
 
     void VulkanRenderer::Render() {
+        VkCommandBuffer& commandBuffer = m_frameContext.GetCurrentCommandBuffer();
+        VK_VERIFY(vkResetCommandBuffer(commandBuffer, 0));
 
+        // Begin command buffer
+        VkCommandBufferBeginInfo beginInfo{};
+        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        beginInfo.flags = 0;
+        beginInfo.pInheritanceInfo = nullptr;
+        VK_VERIFY(vkBeginCommandBuffer(commandBuffer, &beginInfo));
+
+        // Begin render pass
+        VkRenderPassBeginInfo renderPassInfo{};
+        renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+        renderPassInfo.renderPass = m_renderPass;
+        renderPassInfo.framebuffer = m_framebuffers[m_imageIndexAcquired];
+        renderPassInfo.renderArea.offset = {0, 0};
+        const auto swapchainExtent = m_swapchainObject.GetExtent();
+        renderPassInfo.renderArea.extent = swapchainExtent;
+        VkClearValue clearColor = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
+        renderPassInfo.clearValueCount = 1;
+        renderPassInfo.pClearValues = &clearColor;
+        vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+        // Render commands
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
+
+        VkViewport viewport{};
+        viewport.x = 0.0f;
+        viewport.y = 0.0f;
+        viewport.width = static_cast<float>(swapchainExtent.width);
+        viewport.height = static_cast<float>(swapchainExtent.height);
+        viewport.minDepth = 0.0f;
+        viewport.maxDepth = 1.0f;
+        vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+
+        VkRect2D scissor{};
+        scissor.offset = {0, 0};
+        scissor.extent = swapchainExtent;
+        vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+
+        vkCmdDraw(commandBuffer, 3, 1, 0, 0);
+
+        // End render pass
+        vkCmdEndRenderPass(commandBuffer);
+
+        // End command buffer
+        VK_VERIFY(vkEndCommandBuffer(commandBuffer));
+        m_frameContext.SetCurrentCommandBufferRecorded(true);
     }
 
     void VulkanRenderer::Present() {
+        MOBILEGL_ASSERT(m_imageIndexAcquired < m_swapchainObject.GetImageCount(),
+                        "Present, acquired image index out of range");
+        VkCommandBuffer& commandBuffer = m_frameContext.GetCurrentCommandBuffer();
+        const Bool hasRecordedWork = m_frameContext.HasCurrentCommandBufferRecorded();
+        Bool needsLayoutTransitionForPresent = false;
 
+        if (!hasRecordedWork) {
+            const auto acquiredImageLayout = m_swapchainObject.GetImageLayout(m_imageIndexAcquired);
+            if (acquiredImageLayout != VK_IMAGE_LAYOUT_PRESENT_SRC_KHR &&
+                acquiredImageLayout != VK_IMAGE_LAYOUT_SHARED_PRESENT_KHR) {
+                needsLayoutTransitionForPresent = true;
+
+                VK_VERIFY(vkResetCommandBuffer(commandBuffer, 0),
+                          "Present, vkResetCommandBuffer(layout transition)");
+
+                VkCommandBufferBeginInfo beginInfo{};
+                beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+                VK_VERIFY(vkBeginCommandBuffer(commandBuffer, &beginInfo),
+                          "Present, vkBeginCommandBuffer(layout transition)");
+
+                VkImageMemoryBarrier presentBarrier{};
+                presentBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+                presentBarrier.srcAccessMask = 0;
+                presentBarrier.dstAccessMask = 0;
+                presentBarrier.oldLayout = acquiredImageLayout;
+                presentBarrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+                presentBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                presentBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                presentBarrier.image = m_swapchainObject.GetImage(m_imageIndexAcquired);
+                presentBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+                presentBarrier.subresourceRange.baseMipLevel = 0;
+                presentBarrier.subresourceRange.levelCount = 1;
+                presentBarrier.subresourceRange.baseArrayLayer = 0;
+                presentBarrier.subresourceRange.layerCount = 1;
+                vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                                     VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, nullptr, 0, nullptr, 1,
+                                     &presentBarrier);
+
+                VK_VERIFY(vkEndCommandBuffer(commandBuffer),
+                          "Present, vkEndCommandBuffer(layout transition)");
+            }
+        }
+
+        const Bool shouldSubmitCommandBuffer = hasRecordedWork || needsLayoutTransitionForPresent;
+
+        // 1) Submit current frame work.
+        VkSubmitInfo submitInfo{};
+        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        VkSemaphore waitSemaphores[] = {m_frameContext.GetCurrentImageAvailableSemaphore()};
+        VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT};
+        submitInfo.waitSemaphoreCount = 1;
+        submitInfo.pWaitSemaphores = waitSemaphores;
+        submitInfo.pWaitDstStageMask = waitStages;
+        submitInfo.commandBufferCount = shouldSubmitCommandBuffer ? 1U : 0U;
+        submitInfo.pCommandBuffers = shouldSubmitCommandBuffer ? &commandBuffer : nullptr;
+        VkSemaphore signalSemaphores[] = {m_frameContext.GetCurrentRenderFinishedSemaphore()};
+        submitInfo.signalSemaphoreCount = 1;
+        submitInfo.pSignalSemaphores = signalSemaphores;
+        VK_VERIFY(vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, m_frameContext.GetCurrentImageInFlightFence()));
+        m_frameContext.SetCurrentCommandBufferRecorded(false);
+        m_swapchainObject.SetImageLayout(m_imageIndexAcquired, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+
+        // 2) Present current frame.
+        VkPresentInfoKHR presentInfo{};
+        presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+        presentInfo.waitSemaphoreCount = 1;
+        presentInfo.pWaitSemaphores = signalSemaphores;
+        VkSwapchainKHR swapChains[] = {m_swapchainObject.GetHandle()};
+        presentInfo.swapchainCount = 1;
+        presentInfo.pSwapchains = swapChains;
+        presentInfo.pImageIndices = &m_imageIndexAcquired;
+        presentInfo.pResults = nullptr;
+        auto result = vkQueuePresentKHR(m_presentQueue, &presentInfo);
+        if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
+            MGLOG_D("Present, vkQueuePresentKHR got %d, recreating swapchain", result);
+            RecreateSwapchain();
+            result = VK_SUCCESS;
+        }
+        VK_VERIFY(result, "Present, vkQueuePresentKHR");
+
+        // 3) Advance frame slot.
+        m_frameContext.AdvanceFrame();
+
+        // 4) Wait/reset/acquire for next frame.
+        VK_VERIFY(vkWaitForFences(m_device, 1, &m_frameContext.GetCurrentImageInFlightFence(), VK_TRUE, UINT64_MAX),
+                  "Present, vkWaitForFences");
+        VK_VERIFY(vkResetFences(m_device, 1, &m_frameContext.GetCurrentImageInFlightFence()),
+                  "Present, vkResetFences");
+        result =
+            vkAcquireNextImageKHR(m_device, m_swapchainObject.GetHandle(), UINT64_MAX,
+                                  m_frameContext.GetCurrentImageAvailableSemaphore(), VK_NULL_HANDLE,
+                                  &m_imageIndexAcquired);
+        if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
+            MGLOG_D("Present, vkAcquireNextImageKHR got %d, recreating swapchain", result);
+            RecreateSwapchain();
+            result = VK_SUCCESS;
+        }
+        VK_VERIFY(result, "Present, vkAcquireNextImageKHR");
     }
 
     void VulkanRenderer::CreateInstance() {
@@ -115,7 +444,7 @@ namespace MobileGL::MG_Backend::DirectVulkan {
         MGLOG_I("Validation layers %s.", m_config.EnableValidationLayers ? "requested" : "not requested");
 
         if (m_config.EnableValidationLayers && !validationLayerAvailable) {
-            MOBILEGL_ASSERT(false, "Validation layers requested but not available!");
+            MGLOG_I("Validation layers not available! Disabling validation layers.");
         }
 
         m_validationLayersEnabled = m_config.EnableValidationLayers && validationLayerAvailable;
@@ -133,7 +462,6 @@ namespace MobileGL::MG_Backend::DirectVulkan {
         appInfo.apiVersion = VK_API_VERSION_1_1;
 #endif
 
-
         // ---------------- Instance info -------------------
         VkInstanceCreateInfo instanceInfo = {};
         instanceInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
@@ -142,13 +470,20 @@ namespace MobileGL::MG_Backend::DirectVulkan {
         // Extensions
         Vector<const char*> exts = {VK_KHR_SURFACE_EXTENSION_NAME,
 #ifdef VK_USE_PLATFORM_ANDROID_KHR
-      VK_KHR_ANDROID_SURFACE_EXTENSION_NAME
+                                    VK_KHR_ANDROID_SURFACE_EXTENSION_NAME
 #elif defined VK_USE_PLATFORM_WIN32_KHR
-      VK_KHR_WIN32_SURFACE_EXTENSION_NAME
+                                    VK_KHR_WIN32_SURFACE_EXTENSION_NAME
+#elif defined VK_USE_PLATFORM_METAL_EXT
+                                    VK_EXT_METAL_SURFACE_EXTENSION_NAME
 #else
 #warning "VulkanContext::CreateInstance: VK_KHR_*_surface extension not defined on this platform"
 #endif
-}; // TODO: support more platforms
+        }; // TODO: support more platforms
+
+#if defined(VK_USE_PLATFORM_METAL_EXT)
+        exts.push_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
+        instanceInfo.flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
+#endif
 
         if (m_validationLayersEnabled) {
             exts.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
@@ -171,22 +506,22 @@ namespace MobileGL::MG_Backend::DirectVulkan {
 
         VK_VERIFY(vkCreateInstance(&instanceInfo, nullptr, &m_instance), "vkCreateInstance failed");
 
-        if (m_validationLayersEnabled)
-            VK_VERIFY(SetupDebugMessenger());
+        if (m_validationLayersEnabled) VK_VERIFY(SetupDebugMessenger());
     }
 
     VkResult VulkanRenderer::SetupDebugMessenger() {
         auto createInfo = PopulateDebugMessengerCreateInfo();
-        auto vkCreateDebugUtilsMessengerEXT = (PFN_vkCreateDebugUtilsMessengerEXT) vkGetInstanceProcAddr(m_instance, "vkCreateDebugUtilsMessengerEXT");
-        if (!vkCreateDebugUtilsMessengerEXT)
-            return VK_ERROR_EXTENSION_NOT_PRESENT;
+        auto vkCreateDebugUtilsMessengerEXT =
+            (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(m_instance, "vkCreateDebugUtilsMessengerEXT");
+        if (!vkCreateDebugUtilsMessengerEXT) return VK_ERROR_EXTENSION_NOT_PRESENT;
         VK_VERIFY(vkCreateDebugUtilsMessengerEXT(m_instance, &createInfo, nullptr, &m_debugMessenger));
         return VK_SUCCESS;
     }
 
     VkResult VulkanRenderer::DestroyDebugMessenger() {
         if (m_debugMessenger != VK_NULL_HANDLE) {
-            auto func = (PFN_vkDestroyDebugUtilsMessengerEXT) vkGetInstanceProcAddr(m_instance, "vkDestroyDebugUtilsMessengerEXT");
+            auto func = (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(m_instance,
+                                                                                   "vkDestroyDebugUtilsMessengerEXT");
             if (func != nullptr) {
                 func(m_instance, m_debugMessenger, nullptr);
             } else {
@@ -199,8 +534,12 @@ namespace MobileGL::MG_Backend::DirectVulkan {
     VkDebugUtilsMessengerCreateInfoEXT VulkanRenderer::PopulateDebugMessengerCreateInfo() {
         VkDebugUtilsMessengerCreateInfoEXT createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
-        createInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
-        createInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+        createInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
+                                     VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+                                     VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+        createInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
+                                 VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+                                 VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
         createInfo.pfnUserCallback = DebugCallback;
         createInfo.pUserData = this;
         return createInfo;
@@ -232,8 +571,9 @@ namespace MobileGL::MG_Backend::DirectVulkan {
         }
     }
 
-    Bool VulkanRenderer::GetMoreCapablePhysicalDevice(
-        VkPhysicalDevice newVkDevice, VkSurfaceKHR surface, const PhysicalDevice& otherDevice, PhysicalDevice& outBetterDevice) {
+    Bool VulkanRenderer::GetMoreCapablePhysicalDevice(VkPhysicalDevice newVkDevice, VkSurfaceKHR surface,
+                                                      const PhysicalDevice& otherDevice,
+                                                      PhysicalDevice& outBetterDevice) {
         const auto deviceTypeToStr = [](VkPhysicalDeviceType type) {
             switch (type) {
             case VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU:
@@ -257,22 +597,22 @@ namespace MobileGL::MG_Backend::DirectVulkan {
         vkGetPhysicalDeviceProperties(newVkDevice, &newDevice.properties);
         const auto& deviceProperties = newDevice.properties;
         auto apiVersion = deviceProperties.apiVersion;
-        MGLOG_I("    %s (Vulkan %d.%d.%d, %s)",
-            deviceProperties.deviceName,
-            VK_VERSION_MAJOR(apiVersion), VK_VERSION_MINOR(apiVersion), VK_VERSION_PATCH(apiVersion),
-            deviceTypeToStr(deviceProperties.deviceType));
+        MGLOG_I("    %s (Vulkan %d.%d.%d, %s)", deviceProperties.deviceName, VK_VERSION_MAJOR(apiVersion),
+                VK_VERSION_MINOR(apiVersion), VK_VERSION_PATCH(apiVersion),
+                deviceTypeToStr(deviceProperties.deviceType));
 
         // Check device extensions (including swapchain extension)
         Bool deviceExtSupported = IsNecessaryDeviceExtensionSupported(newVkDevice);
         if (!deviceExtSupported) {
             outBetterDevice = otherDevice;
-            MGLOG_I("    Ignored physical device. (Reason: Some of the required device extension not supported on this device)");
+            MGLOG_I("    Ignored physical device. (Reason: Some of the required device extension not supported on this "
+                    "device)");
             return false;
         }
 
         // Check swapchain capabilities
-        newDevice.swapchainCapabilities = GetSwapchainCapabilities(newVkDevice, surface);
-        if (!newDevice.swapchainCapabilities.IsComplete()) {
+        auto swapchainCapabilities = SwapchainObject::GetSwapchainCapabilities(newVkDevice, surface);
+        if (!swapchainCapabilities.IsComplete()) {
             outBetterDevice = otherDevice;
             MGLOG_I("    Ignored physical device. (Reason: Swapchain capabilities not met)");
             return false;
@@ -322,32 +662,6 @@ namespace MobileGL::MG_Backend::DirectVulkan {
         return false;
     }
 
-    VkSurfaceFormatKHR VulkanRenderer::ChooseSwapchainSurfaceFormat(
-        const Vector<VkSurfaceFormatKHR>& availableFormats) {
-        for (const auto& availableFormat : availableFormats) {
-            if (availableFormat.format == VK_FORMAT_B8G8R8A8_SRGB && availableFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
-                return availableFormat;
-            }
-        }
-
-        // TODO: Properly rank other formats
-        return availableFormats[0];
-    }
-
-    VkPresentModeKHR VulkanRenderer::ChooseSwapchainPresentMode(
-        const Vector<VkPresentModeKHR>& availablePresentModes) {
-        for (const auto& presentMode : availablePresentModes) {
-            if (presentMode == VK_PRESENT_MODE_IMMEDIATE_KHR) {
-                return presentMode;
-            } else if (presentMode == VK_PRESENT_MODE_MAILBOX_KHR) {
-                return presentMode;
-            }
-        }
-
-        // TODO: Properly rank other modes
-        return availablePresentModes[0];
-    }
-
     Bool VulkanRenderer::IsNecessaryDeviceExtensionSupported(VkPhysicalDevice device) {
         Uint32 extensionCount = 0;
         vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, nullptr);
@@ -370,35 +684,12 @@ namespace MobileGL::MG_Backend::DirectVulkan {
                 }
             }
             if (!found) {
-                    MGLOG_I("Required extension not found: %s", s_deviceExtensionNames[i]);
+                MGLOG_I("Required extension not found: %s", s_deviceExtensionNames[i]);
                 return false;
             }
         }
 
         return true;
-    }
-
-    VulkanRenderer::SwapchainCapabilities VulkanRenderer::GetSwapchainCapabilities(VkPhysicalDevice device, VkSurfaceKHR surface) {
-        SwapchainCapabilities swapchainCapabilities;
-
-        VK_VERIFY(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, surface, &swapchainCapabilities.capabilities));
-        Uint32 formatCount;
-        VK_VERIFY(vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &formatCount, nullptr));
-
-        if (formatCount != 0) {
-            swapchainCapabilities.surfaceFormats.resize(formatCount);
-            VK_VERIFY(vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &formatCount, swapchainCapabilities.surfaceFormats.data()));
-        }
-
-        Uint32 presentModeCount;
-        VK_VERIFY(vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface, &presentModeCount, nullptr));
-
-        if (presentModeCount != 0) {
-            swapchainCapabilities.presentModes.resize(presentModeCount);
-            VK_VERIFY(vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface, &presentModeCount, swapchainCapabilities.presentModes.data()));
-        }
-
-        return swapchainCapabilities;
     }
 
     void VulkanRenderer::CreateLogicalDeviceAndQueues() {
@@ -435,8 +726,31 @@ namespace MobileGL::MG_Backend::DirectVulkan {
         } else {
             deviceCreateInfo.enabledLayerCount = 0;
         }
-        deviceCreateInfo.enabledExtensionCount = static_cast<uint32_t>(std::size(s_deviceExtensionNames));
-        deviceCreateInfo.ppEnabledExtensionNames = s_deviceExtensionNames;
+
+        Vector<const char*> enabledDeviceExtensions;
+        enabledDeviceExtensions.reserve(std::size(s_deviceExtensionNames) + 1);
+        for (const char* extensionName : s_deviceExtensionNames) {
+            enabledDeviceExtensions.push_back(extensionName);
+        }
+
+#ifdef VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME
+        Uint32 extensionCount = 0;
+        VK_VERIFY(vkEnumerateDeviceExtensionProperties(m_physicalDevice.handle, nullptr, &extensionCount, nullptr));
+        Vector<VkExtensionProperties> availableExtensions(extensionCount);
+        VK_VERIFY(vkEnumerateDeviceExtensionProperties(m_physicalDevice.handle, nullptr, &extensionCount,
+                                                       availableExtensions.data()));
+
+        for (const auto& extension : availableExtensions) {
+            if (strcmp(extension.extensionName, VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME) == 0) {
+                enabledDeviceExtensions.push_back(VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME);
+                MGLOG_I("Enabled optional device extension: %s", VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME);
+                break;
+            }
+        }
+#endif
+
+        deviceCreateInfo.enabledExtensionCount = static_cast<Uint32>(enabledDeviceExtensions.size());
+        deviceCreateInfo.ppEnabledExtensionNames = enabledDeviceExtensions.data();
         VK_VERIFY(vkCreateDevice(m_physicalDevice.handle, &deviceCreateInfo, nullptr, &m_device), "vkCreateDevice");
         MGLOG_I("Logical device created.");
 
@@ -447,362 +761,66 @@ namespace MobileGL::MG_Backend::DirectVulkan {
     }
 
     void VulkanRenderer::CreateSwapchain() {
-        auto surfaceFormatToStr = [](VkFormat format) {
-            switch (format) {
-                ENUM_STR_CASE(VK_FORMAT_UNDEFINED)
-                ENUM_STR_CASE(VK_FORMAT_R4G4_UNORM_PACK8)
-                ENUM_STR_CASE(VK_FORMAT_R4G4B4A4_UNORM_PACK16)
-                ENUM_STR_CASE(VK_FORMAT_B4G4R4A4_UNORM_PACK16)
-                ENUM_STR_CASE(VK_FORMAT_R5G6B5_UNORM_PACK16)
-                ENUM_STR_CASE(VK_FORMAT_B5G6R5_UNORM_PACK16)
-                ENUM_STR_CASE(VK_FORMAT_R5G5B5A1_UNORM_PACK16)
-                ENUM_STR_CASE(VK_FORMAT_B5G5R5A1_UNORM_PACK16)
-                ENUM_STR_CASE(VK_FORMAT_A1R5G5B5_UNORM_PACK16)
-                ENUM_STR_CASE(VK_FORMAT_R8_UNORM)
-                ENUM_STR_CASE(VK_FORMAT_R8_SNORM)
-                ENUM_STR_CASE(VK_FORMAT_R8_USCALED)
-                ENUM_STR_CASE(VK_FORMAT_R8_SSCALED)
-                ENUM_STR_CASE(VK_FORMAT_R8_UINT)
-                ENUM_STR_CASE(VK_FORMAT_R8_SINT)
-                ENUM_STR_CASE(VK_FORMAT_R8_SRGB)
-                ENUM_STR_CASE(VK_FORMAT_R8G8_UNORM)
-                ENUM_STR_CASE(VK_FORMAT_R8G8_SNORM)
-                ENUM_STR_CASE(VK_FORMAT_R8G8_USCALED)
-                ENUM_STR_CASE(VK_FORMAT_R8G8_SSCALED)
-                ENUM_STR_CASE(VK_FORMAT_R8G8_UINT)
-                ENUM_STR_CASE(VK_FORMAT_R8G8_SINT)
-                ENUM_STR_CASE(VK_FORMAT_R8G8_SRGB)
-                ENUM_STR_CASE(VK_FORMAT_R8G8B8_UNORM)
-                ENUM_STR_CASE(VK_FORMAT_R8G8B8_SNORM)
-                ENUM_STR_CASE(VK_FORMAT_R8G8B8_USCALED)
-                ENUM_STR_CASE(VK_FORMAT_R8G8B8_SSCALED)
-                ENUM_STR_CASE(VK_FORMAT_R8G8B8_UINT)
-                ENUM_STR_CASE(VK_FORMAT_R8G8B8_SINT)
-                ENUM_STR_CASE(VK_FORMAT_R8G8B8_SRGB)
-                ENUM_STR_CASE(VK_FORMAT_B8G8R8_UNORM)
-                ENUM_STR_CASE(VK_FORMAT_B8G8R8_SNORM)
-                ENUM_STR_CASE(VK_FORMAT_B8G8R8_USCALED)
-                ENUM_STR_CASE(VK_FORMAT_B8G8R8_SSCALED)
-                ENUM_STR_CASE(VK_FORMAT_B8G8R8_UINT)
-                ENUM_STR_CASE(VK_FORMAT_B8G8R8_SINT)
-                ENUM_STR_CASE(VK_FORMAT_B8G8R8_SRGB)
-                ENUM_STR_CASE(VK_FORMAT_R8G8B8A8_UNORM)
-                ENUM_STR_CASE(VK_FORMAT_R8G8B8A8_SNORM)
-                ENUM_STR_CASE(VK_FORMAT_R8G8B8A8_USCALED)
-                ENUM_STR_CASE(VK_FORMAT_R8G8B8A8_SSCALED)
-                ENUM_STR_CASE(VK_FORMAT_R8G8B8A8_UINT)
-                ENUM_STR_CASE(VK_FORMAT_R8G8B8A8_SINT)
-                ENUM_STR_CASE(VK_FORMAT_R8G8B8A8_SRGB)
-                ENUM_STR_CASE(VK_FORMAT_B8G8R8A8_UNORM)
-                ENUM_STR_CASE(VK_FORMAT_B8G8R8A8_SNORM)
-                ENUM_STR_CASE(VK_FORMAT_B8G8R8A8_USCALED)
-                ENUM_STR_CASE(VK_FORMAT_B8G8R8A8_SSCALED)
-                ENUM_STR_CASE(VK_FORMAT_B8G8R8A8_UINT)
-                ENUM_STR_CASE(VK_FORMAT_B8G8R8A8_SINT)
-                ENUM_STR_CASE(VK_FORMAT_B8G8R8A8_SRGB)
-                ENUM_STR_CASE(VK_FORMAT_A8B8G8R8_UNORM_PACK32)
-                ENUM_STR_CASE(VK_FORMAT_A8B8G8R8_SNORM_PACK32)
-                ENUM_STR_CASE(VK_FORMAT_A8B8G8R8_USCALED_PACK32)
-                ENUM_STR_CASE(VK_FORMAT_A8B8G8R8_SSCALED_PACK32)
-                ENUM_STR_CASE(VK_FORMAT_A8B8G8R8_UINT_PACK32)
-                ENUM_STR_CASE(VK_FORMAT_A8B8G8R8_SINT_PACK32)
-                ENUM_STR_CASE(VK_FORMAT_A8B8G8R8_SRGB_PACK32)
-                ENUM_STR_CASE(VK_FORMAT_A2R10G10B10_UNORM_PACK32)
-                ENUM_STR_CASE(VK_FORMAT_A2R10G10B10_SNORM_PACK32)
-                ENUM_STR_CASE(VK_FORMAT_A2R10G10B10_USCALED_PACK32)
-                ENUM_STR_CASE(VK_FORMAT_A2R10G10B10_SSCALED_PACK32)
-                ENUM_STR_CASE(VK_FORMAT_A2R10G10B10_UINT_PACK32)
-                ENUM_STR_CASE(VK_FORMAT_A2R10G10B10_SINT_PACK32)
-                ENUM_STR_CASE(VK_FORMAT_A2B10G10R10_UNORM_PACK32)
-                ENUM_STR_CASE(VK_FORMAT_A2B10G10R10_SNORM_PACK32)
-                ENUM_STR_CASE(VK_FORMAT_A2B10G10R10_USCALED_PACK32)
-                ENUM_STR_CASE(VK_FORMAT_A2B10G10R10_SSCALED_PACK32)
-                ENUM_STR_CASE(VK_FORMAT_A2B10G10R10_UINT_PACK32)
-                ENUM_STR_CASE(VK_FORMAT_A2B10G10R10_SINT_PACK32)
-                ENUM_STR_CASE(VK_FORMAT_R16_UNORM)
-                ENUM_STR_CASE(VK_FORMAT_R16_SNORM)
-                ENUM_STR_CASE(VK_FORMAT_R16_USCALED)
-                ENUM_STR_CASE(VK_FORMAT_R16_SSCALED)
-                ENUM_STR_CASE(VK_FORMAT_R16_UINT)
-                ENUM_STR_CASE(VK_FORMAT_R16_SINT)
-                ENUM_STR_CASE(VK_FORMAT_R16_SFLOAT)
-                ENUM_STR_CASE(VK_FORMAT_R16G16_UNORM)
-                ENUM_STR_CASE(VK_FORMAT_R16G16_SNORM)
-                ENUM_STR_CASE(VK_FORMAT_R16G16_USCALED)
-                ENUM_STR_CASE(VK_FORMAT_R16G16_SSCALED)
-                ENUM_STR_CASE(VK_FORMAT_R16G16_UINT)
-                ENUM_STR_CASE(VK_FORMAT_R16G16_SINT)
-                ENUM_STR_CASE(VK_FORMAT_R16G16_SFLOAT)
-                ENUM_STR_CASE(VK_FORMAT_R16G16B16_UNORM)
-                ENUM_STR_CASE(VK_FORMAT_R16G16B16_SNORM)
-                ENUM_STR_CASE(VK_FORMAT_R16G16B16_USCALED)
-                ENUM_STR_CASE(VK_FORMAT_R16G16B16_SSCALED)
-                ENUM_STR_CASE(VK_FORMAT_R16G16B16_UINT)
-                ENUM_STR_CASE(VK_FORMAT_R16G16B16_SINT)
-                ENUM_STR_CASE(VK_FORMAT_R16G16B16_SFLOAT)
-                ENUM_STR_CASE(VK_FORMAT_R16G16B16A16_UNORM)
-                ENUM_STR_CASE(VK_FORMAT_R16G16B16A16_SNORM)
-                ENUM_STR_CASE(VK_FORMAT_R16G16B16A16_USCALED)
-                ENUM_STR_CASE(VK_FORMAT_R16G16B16A16_SSCALED)
-                ENUM_STR_CASE(VK_FORMAT_R16G16B16A16_UINT)
-                ENUM_STR_CASE(VK_FORMAT_R16G16B16A16_SINT)
-                ENUM_STR_CASE(VK_FORMAT_R16G16B16A16_SFLOAT)
-                ENUM_STR_CASE(VK_FORMAT_R32_UINT)
-                ENUM_STR_CASE(VK_FORMAT_R32_SINT)
-                ENUM_STR_CASE(VK_FORMAT_R32_SFLOAT)
-                ENUM_STR_CASE(VK_FORMAT_R32G32_UINT)
-                ENUM_STR_CASE(VK_FORMAT_R32G32_SINT)
-                ENUM_STR_CASE(VK_FORMAT_R32G32_SFLOAT)
-                ENUM_STR_CASE(VK_FORMAT_R32G32B32_UINT)
-                ENUM_STR_CASE(VK_FORMAT_R32G32B32_SINT)
-                ENUM_STR_CASE(VK_FORMAT_R32G32B32_SFLOAT)
-                ENUM_STR_CASE(VK_FORMAT_R32G32B32A32_UINT)
-                ENUM_STR_CASE(VK_FORMAT_R32G32B32A32_SINT)
-                ENUM_STR_CASE(VK_FORMAT_R32G32B32A32_SFLOAT)
-                ENUM_STR_CASE(VK_FORMAT_R64_UINT)
-                ENUM_STR_CASE(VK_FORMAT_R64_SINT)
-                ENUM_STR_CASE(VK_FORMAT_R64_SFLOAT)
-                ENUM_STR_CASE(VK_FORMAT_R64G64_UINT)
-                ENUM_STR_CASE(VK_FORMAT_R64G64_SINT)
-                ENUM_STR_CASE(VK_FORMAT_R64G64_SFLOAT)
-                ENUM_STR_CASE(VK_FORMAT_R64G64B64_UINT)
-                ENUM_STR_CASE(VK_FORMAT_R64G64B64_SINT)
-                ENUM_STR_CASE(VK_FORMAT_R64G64B64_SFLOAT)
-                ENUM_STR_CASE(VK_FORMAT_R64G64B64A64_UINT)
-                ENUM_STR_CASE(VK_FORMAT_R64G64B64A64_SINT)
-                ENUM_STR_CASE(VK_FORMAT_R64G64B64A64_SFLOAT)
-                ENUM_STR_CASE(VK_FORMAT_B10G11R11_UFLOAT_PACK32)
-                ENUM_STR_CASE(VK_FORMAT_E5B9G9R9_UFLOAT_PACK32)
-                ENUM_STR_CASE(VK_FORMAT_D16_UNORM)
-                ENUM_STR_CASE(VK_FORMAT_X8_D24_UNORM_PACK32)
-                ENUM_STR_CASE(VK_FORMAT_D32_SFLOAT)
-                ENUM_STR_CASE(VK_FORMAT_S8_UINT)
-                ENUM_STR_CASE(VK_FORMAT_D16_UNORM_S8_UINT)
-                ENUM_STR_CASE(VK_FORMAT_D24_UNORM_S8_UINT)
-                ENUM_STR_CASE(VK_FORMAT_D32_SFLOAT_S8_UINT)
-                ENUM_STR_CASE(VK_FORMAT_BC1_RGB_UNORM_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_BC1_RGB_SRGB_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_BC1_RGBA_UNORM_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_BC1_RGBA_SRGB_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_BC2_UNORM_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_BC2_SRGB_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_BC3_UNORM_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_BC3_SRGB_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_BC4_UNORM_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_BC4_SNORM_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_BC5_UNORM_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_BC5_SNORM_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_BC6H_UFLOAT_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_BC6H_SFLOAT_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_BC7_UNORM_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_BC7_SRGB_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_ETC2_R8G8B8_UNORM_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_ETC2_R8G8B8_SRGB_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_ETC2_R8G8B8A1_UNORM_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_ETC2_R8G8B8A1_SRGB_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_ETC2_R8G8B8A8_UNORM_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_ETC2_R8G8B8A8_SRGB_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_EAC_R11_UNORM_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_EAC_R11_SNORM_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_EAC_R11G11_UNORM_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_EAC_R11G11_SNORM_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_ASTC_4x4_UNORM_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_ASTC_4x4_SRGB_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_ASTC_5x4_UNORM_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_ASTC_5x4_SRGB_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_ASTC_5x5_UNORM_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_ASTC_5x5_SRGB_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_ASTC_6x5_UNORM_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_ASTC_6x5_SRGB_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_ASTC_6x6_UNORM_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_ASTC_6x6_SRGB_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_ASTC_8x5_UNORM_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_ASTC_8x5_SRGB_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_ASTC_8x6_UNORM_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_ASTC_8x6_SRGB_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_ASTC_8x8_UNORM_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_ASTC_8x8_SRGB_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_ASTC_10x5_UNORM_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_ASTC_10x5_SRGB_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_ASTC_10x6_UNORM_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_ASTC_10x6_SRGB_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_ASTC_10x8_UNORM_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_ASTC_10x8_SRGB_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_ASTC_10x10_UNORM_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_ASTC_10x10_SRGB_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_ASTC_12x10_UNORM_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_ASTC_12x10_SRGB_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_ASTC_12x12_UNORM_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_ASTC_12x12_SRGB_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_G8B8G8R8_422_UNORM)
-                ENUM_STR_CASE(VK_FORMAT_B8G8R8G8_422_UNORM)
-                ENUM_STR_CASE(VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM)
-                ENUM_STR_CASE(VK_FORMAT_G8_B8R8_2PLANE_420_UNORM)
-                ENUM_STR_CASE(VK_FORMAT_G8_B8_R8_3PLANE_422_UNORM)
-                ENUM_STR_CASE(VK_FORMAT_G8_B8R8_2PLANE_422_UNORM)
-                ENUM_STR_CASE(VK_FORMAT_G8_B8_R8_3PLANE_444_UNORM)
-                ENUM_STR_CASE(VK_FORMAT_R10X6_UNORM_PACK16)
-                ENUM_STR_CASE(VK_FORMAT_R10X6G10X6_UNORM_2PACK16)
-                ENUM_STR_CASE(VK_FORMAT_R10X6G10X6B10X6A10X6_UNORM_4PACK16)
-                ENUM_STR_CASE(VK_FORMAT_G10X6B10X6G10X6R10X6_422_UNORM_4PACK16)
-                ENUM_STR_CASE(VK_FORMAT_B10X6G10X6R10X6G10X6_422_UNORM_4PACK16)
-                ENUM_STR_CASE(VK_FORMAT_G10X6_B10X6_R10X6_3PLANE_420_UNORM_3PACK16)
-                ENUM_STR_CASE(VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16)
-                ENUM_STR_CASE(VK_FORMAT_G10X6_B10X6_R10X6_3PLANE_422_UNORM_3PACK16)
-                ENUM_STR_CASE(VK_FORMAT_G10X6_B10X6R10X6_2PLANE_422_UNORM_3PACK16)
-                ENUM_STR_CASE(VK_FORMAT_G10X6_B10X6_R10X6_3PLANE_444_UNORM_3PACK16)
-                ENUM_STR_CASE(VK_FORMAT_R12X4_UNORM_PACK16)
-                ENUM_STR_CASE(VK_FORMAT_R12X4G12X4_UNORM_2PACK16)
-                ENUM_STR_CASE(VK_FORMAT_R12X4G12X4B12X4A12X4_UNORM_4PACK16)
-                ENUM_STR_CASE(VK_FORMAT_G12X4B12X4G12X4R12X4_422_UNORM_4PACK16)
-                ENUM_STR_CASE(VK_FORMAT_B12X4G12X4R12X4G12X4_422_UNORM_4PACK16)
-                ENUM_STR_CASE(VK_FORMAT_G12X4_B12X4_R12X4_3PLANE_420_UNORM_3PACK16)
-                ENUM_STR_CASE(VK_FORMAT_G12X4_B12X4R12X4_2PLANE_420_UNORM_3PACK16)
-                ENUM_STR_CASE(VK_FORMAT_G12X4_B12X4_R12X4_3PLANE_422_UNORM_3PACK16)
-                ENUM_STR_CASE(VK_FORMAT_G12X4_B12X4R12X4_2PLANE_422_UNORM_3PACK16)
-                ENUM_STR_CASE(VK_FORMAT_G12X4_B12X4_R12X4_3PLANE_444_UNORM_3PACK16)
-                ENUM_STR_CASE(VK_FORMAT_G16B16G16R16_422_UNORM)
-                ENUM_STR_CASE(VK_FORMAT_B16G16R16G16_422_UNORM)
-                ENUM_STR_CASE(VK_FORMAT_G16_B16_R16_3PLANE_420_UNORM)
-                ENUM_STR_CASE(VK_FORMAT_G16_B16R16_2PLANE_420_UNORM)
-                ENUM_STR_CASE(VK_FORMAT_G16_B16_R16_3PLANE_422_UNORM)
-                ENUM_STR_CASE(VK_FORMAT_G16_B16R16_2PLANE_422_UNORM)
-                ENUM_STR_CASE(VK_FORMAT_G16_B16_R16_3PLANE_444_UNORM)
-                ENUM_STR_CASE(VK_FORMAT_G8_B8R8_2PLANE_444_UNORM)
-                ENUM_STR_CASE(VK_FORMAT_G10X6_B10X6R10X6_2PLANE_444_UNORM_3PACK16)
-                ENUM_STR_CASE(VK_FORMAT_G12X4_B12X4R12X4_2PLANE_444_UNORM_3PACK16)
-                ENUM_STR_CASE(VK_FORMAT_G16_B16R16_2PLANE_444_UNORM)
-                ENUM_STR_CASE(VK_FORMAT_A4R4G4B4_UNORM_PACK16)
-                ENUM_STR_CASE(VK_FORMAT_A4B4G4R4_UNORM_PACK16)
-                ENUM_STR_CASE(VK_FORMAT_ASTC_4x4_SFLOAT_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_ASTC_5x4_SFLOAT_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_ASTC_5x5_SFLOAT_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_ASTC_6x5_SFLOAT_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_ASTC_6x6_SFLOAT_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_ASTC_8x5_SFLOAT_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_ASTC_8x6_SFLOAT_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_ASTC_8x8_SFLOAT_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_ASTC_10x5_SFLOAT_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_ASTC_10x6_SFLOAT_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_ASTC_10x8_SFLOAT_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_ASTC_10x10_SFLOAT_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_ASTC_12x10_SFLOAT_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_ASTC_12x12_SFLOAT_BLOCK)
-                ENUM_STR_CASE(VK_FORMAT_PVRTC1_2BPP_UNORM_BLOCK_IMG)
-                ENUM_STR_CASE(VK_FORMAT_PVRTC1_4BPP_UNORM_BLOCK_IMG)
-                ENUM_STR_CASE(VK_FORMAT_PVRTC2_2BPP_UNORM_BLOCK_IMG)
-                ENUM_STR_CASE(VK_FORMAT_PVRTC2_4BPP_UNORM_BLOCK_IMG)
-                ENUM_STR_CASE(VK_FORMAT_PVRTC1_2BPP_SRGB_BLOCK_IMG)
-                ENUM_STR_CASE(VK_FORMAT_PVRTC1_4BPP_SRGB_BLOCK_IMG)
-                ENUM_STR_CASE(VK_FORMAT_PVRTC2_2BPP_SRGB_BLOCK_IMG)
-                ENUM_STR_CASE(VK_FORMAT_PVRTC2_4BPP_SRGB_BLOCK_IMG)
-                ENUM_STR_CASE(VK_FORMAT_R16G16_SFIXED5_NV)
-                ENUM_STR_CASE(VK_FORMAT_A1B5G5R5_UNORM_PACK16_KHR)
-                ENUM_STR_CASE(VK_FORMAT_A8_UNORM_KHR)
-                default:
-                    return "UNKNOWN_FORMAT";
-            }
-        };
+        m_swapchainObject.Create(m_device, m_physicalDevice.handle, m_surface,
+                                 static_cast<Uint32>(m_physicalDevice.queueFamilies.graphicsFamily),
+                                 static_cast<Uint32>(m_physicalDevice.queueFamilies.presentFamily),
+                                 m_config.MaxFramesInFlight);
+    }
 
-        auto colorSpaceToStr = [](VkColorSpaceKHR cs) {
-            switch (cs) {
-                ENUM_STR_CASE(VK_COLOR_SPACE_SRGB_NONLINEAR_KHR);
-                ENUM_STR_CASE(VK_COLOR_SPACE_DISPLAY_P3_NONLINEAR_EXT)
-                ENUM_STR_CASE(VK_COLOR_SPACE_EXTENDED_SRGB_LINEAR_EXT)
-                ENUM_STR_CASE(VK_COLOR_SPACE_DISPLAY_P3_LINEAR_EXT)
-                ENUM_STR_CASE(VK_COLOR_SPACE_DCI_P3_NONLINEAR_EXT)
-                ENUM_STR_CASE(VK_COLOR_SPACE_BT709_LINEAR_EXT)
-                ENUM_STR_CASE(VK_COLOR_SPACE_BT709_NONLINEAR_EXT)
-                ENUM_STR_CASE(VK_COLOR_SPACE_BT2020_LINEAR_EXT)
-                ENUM_STR_CASE(VK_COLOR_SPACE_HDR10_ST2084_EXT)
-                ENUM_STR_CASE(VK_COLOR_SPACE_DOLBYVISION_EXT)
-                ENUM_STR_CASE(VK_COLOR_SPACE_HDR10_HLG_EXT)
-                ENUM_STR_CASE(VK_COLOR_SPACE_ADOBERGB_LINEAR_EXT)
-                ENUM_STR_CASE(VK_COLOR_SPACE_ADOBERGB_NONLINEAR_EXT)
-                ENUM_STR_CASE(VK_COLOR_SPACE_PASS_THROUGH_EXT)
-                ENUM_STR_CASE(VK_COLOR_SPACE_EXTENDED_SRGB_NONLINEAR_EXT)
-                ENUM_STR_CASE(VK_COLOR_SPACE_DISPLAY_NATIVE_AMD)
-                default:
-                    return "UNKNOWN_COLOR_SPACE";
-            }
-        };
+    void VulkanRenderer::CreateCommandPool() {
+        VkCommandPoolCreateInfo createInfo{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
+        createInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+        createInfo.queueFamilyIndex = m_physicalDevice.queueFamilies.graphicsFamily;
+        VK_VERIFY(vkCreateCommandPool(m_device, &createInfo, nullptr, &m_commandPool));
+        MGLOG_I("Command pool created");
+    }
 
-        auto presentModeToStr = [](VkPresentModeKHR mode) {
-            switch (mode) {
-                ENUM_STR_CASE(VK_PRESENT_MODE_IMMEDIATE_KHR)
-                ENUM_STR_CASE(VK_PRESENT_MODE_MAILBOX_KHR)
-                ENUM_STR_CASE(VK_PRESENT_MODE_FIFO_KHR)
-                ENUM_STR_CASE(VK_PRESENT_MODE_FIFO_RELAXED_KHR)
-                ENUM_STR_CASE(VK_PRESENT_MODE_SHARED_DEMAND_REFRESH_KHR)
-                ENUM_STR_CASE(VK_PRESENT_MODE_SHARED_CONTINUOUS_REFRESH_KHR)
-                default:
-                    return "UNKNOWN_PRESENT_MODE";
-            }
-        };
+    void VulkanRenderer::CreateDefaultRenderPass() {
+        VkAttachmentDescription color{};
+        color.format = m_swapchainObject.GetSurfaceFormat().format;
+        color.samples = VK_SAMPLE_COUNT_1_BIT;
+        color.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        color.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        color.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        color.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
-        auto transformToStr = [](VkSurfaceTransformFlagBitsKHR transform) {
-            switch (transform) {
-                ENUM_STR_CASE(VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR)
-                ENUM_STR_CASE(VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR)
-                ENUM_STR_CASE(VK_SURFACE_TRANSFORM_ROTATE_180_BIT_KHR)
-                ENUM_STR_CASE(VK_SURFACE_TRANSFORM_ROTATE_270_BIT_KHR)
-                ENUM_STR_CASE(VK_SURFACE_TRANSFORM_HORIZONTAL_MIRROR_BIT_KHR)
-                ENUM_STR_CASE(VK_SURFACE_TRANSFORM_HORIZONTAL_MIRROR_ROTATE_90_BIT_KHR)
-                ENUM_STR_CASE(VK_SURFACE_TRANSFORM_HORIZONTAL_MIRROR_ROTATE_180_BIT_KHR)
-                ENUM_STR_CASE(VK_SURFACE_TRANSFORM_HORIZONTAL_MIRROR_ROTATE_270_BIT_KHR)
-                ENUM_STR_CASE(VK_SURFACE_TRANSFORM_INHERIT_BIT_KHR)
-                default:
-                    return "UNKNOWN_TRANSFORM";
-            }
-        };
+        VkAttachmentReference colorRef{0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
+        VkSubpassDescription sub{};
+        sub.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+        sub.colorAttachmentCount = 1;
+        sub.pColorAttachments = &colorRef;
 
-        auto& supportedSurfaceFormats = m_physicalDevice.swapchainCapabilities.surfaceFormats;
-        MGLOG_I("Got %d surface formats: ", supportedSurfaceFormats.size());
-        for (auto& surfaceFormat : supportedSurfaceFormats) {
-            MGLOG_I("    [%s, %s]", surfaceFormatToStr(surfaceFormat.format), colorSpaceToStr(surfaceFormat.colorSpace));
+        VkRenderPassCreateInfo rpci{VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO};
+        rpci.attachmentCount = 1;
+        rpci.pAttachments = &color;
+        rpci.subpassCount = 1;
+        rpci.pSubpasses = &sub;
+
+        VK_VERIFY(vkCreateRenderPass(m_device, &rpci, nullptr, &m_renderPass), "vkCreateRenderPass");
+
+        MGLOG_D("RenderPass created.");
+    }
+
+    void VulkanRenderer::CreateDefaultFramebuffers() {
+        // Create framebuffers now (use swapchain imageviews)
+        const auto& imageViews = m_swapchainObject.GetImageViews();
+        const auto swapchainExtent = m_swapchainObject.GetExtent();
+        Vector<VkFramebuffer>& fbs = m_framebuffers;
+        fbs.reserve(imageViews.size());
+        for (auto iv : imageViews) {
+            VkImageView attachments[] = {iv};
+            VkFramebufferCreateInfo fbci{VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
+            fbci.renderPass = m_renderPass;
+            fbci.attachmentCount = 1;
+            fbci.pAttachments = attachments;
+            fbci.width = swapchainExtent.width;
+            fbci.height = swapchainExtent.height;
+            fbci.layers = 1;
+            VkFramebuffer fb;
+            VK_VERIFY(vkCreateFramebuffer(m_device, &fbci, nullptr, &fb), "vkCreateFramebuffer");
+            fbs.push_back(fb);
         }
-        auto surfaceFormat = ChooseSwapchainSurfaceFormat(supportedSurfaceFormats);
-        MGLOG_I("Picked surface format: [%s, %s]", surfaceFormatToStr(surfaceFormat.format), colorSpaceToStr(surfaceFormat.colorSpace));
-
-        auto& supportedPresentModes = m_physicalDevice.swapchainCapabilities.presentModes;
-        MGLOG_I("Got %d present mode: ", supportedPresentModes.size());
-        for (auto& presentMode : supportedPresentModes) {
-            MGLOG_I("    %s", presentModeToStr(presentMode));
-        }
-        auto presentMode = ChooseSwapchainPresentMode(supportedPresentModes);
-        MGLOG_I("Picked present mode: %s", presentModeToStr(presentMode));
-
-        const auto& swapchainCaps = m_physicalDevice.swapchainCapabilities.capabilities;
-        auto imageCount = std::max<uint32_t>(2, swapchainCaps.minImageCount);
-        MGLOG_I("Set minImageCount = %u", imageCount);
-
-        VkSwapchainCreateInfoKHR sci{VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR};
-        sci.surface = m_surface;
-        sci.minImageCount = imageCount;
-        sci.imageFormat = surfaceFormat.format;
-        sci.imageColorSpace = surfaceFormat.colorSpace;
-        sci.imageExtent = swapchainCaps.currentExtent;
-        sci.imageArrayLayers = 1;
-        sci.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-        Uint32 queueFamilyIndices[] = { (Uint)m_physicalDevice.queueFamilies.graphicsFamily, (Uint)m_physicalDevice.queueFamilies.presentFamily };
-        if (m_physicalDevice.queueFamilies.graphicsFamily != m_physicalDevice.queueFamilies.presentFamily) {
-            sci.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
-            sci.queueFamilyIndexCount = 2;
-            sci.pQueueFamilyIndices = queueFamilyIndices;
-        } else {
-            sci.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-            sci.queueFamilyIndexCount = 0; // Optional
-            sci.pQueueFamilyIndices = nullptr; // Optional
-        }
-        sci.preTransform = swapchainCaps.currentTransform;
-        MGLOG_I("Swapchain currentTransform = %s", transformToStr(swapchainCaps.currentTransform));
-        MGLOG_I("Set swapchain preTransform = %s", transformToStr(sci.preTransform));
-        sci.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-        sci.presentMode = presentMode;
-        sci.clipped = VK_TRUE;
-        sci.oldSwapchain = VK_NULL_HANDLE;
-        VK_VERIFY(vkCreateSwapchainKHR(m_device, &sci, nullptr, &m_swapchain));
-        MGLOG_I("Swapchain created.");
+        MGLOG_D("Default framebuffer created.");
     }
 
     void VulkanRenderer::CreateSurface() {
@@ -820,10 +838,16 @@ namespace MobileGL::MG_Backend::DirectVulkan {
         VkWin32SurfaceCreateInfoKHR sci{VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR};
         sci.hwnd = hwnd;
         VK_VERIFY(vkCreateWin32SurfaceKHR(m_instance, &sci, nullptr, &m_surface), "vkCreateWin32SurfaceKHR failed");
+#elif defined VK_USE_PLATFORM_METAL_EXT
+        MOBILEGL_ASSERT(m_window, "CAMetalLayer is null");
+
+        VkMetalSurfaceCreateInfoEXT sci{VK_STRUCTURE_TYPE_METAL_SURFACE_CREATE_INFO_EXT};
+        sci.pLayer = reinterpret_cast<const void*>(m_window);
+        VK_VERIFY(vkCreateMetalSurfaceEXT(m_instance, &sci, nullptr, &m_surface), "vkCreateMetalSurfaceEXT failed");
 #else
-        //#warning "VulkanRenderer::Initialize called on a platform which is not supported yet"
+        // #warning "VulkanRenderer::Initialize called on a platform which is not supported yet"
         MGLOG_W("VulkanRenderer::Initialize called on a platform which is not supported yet"); // TODO: support more
-        // platforms
+                                                                                               // platforms
 #endif
     }
 
@@ -837,7 +861,7 @@ namespace MobileGL::MG_Backend::DirectVulkan {
     }
 
     Int VulkanRenderer::GetQueueFamilyIndex(const Vector<VkQueueFamilyProperties>& queueFamilies,
-                                               VkQueueFlagBits flag) {
+                                            VkQueueFlagBits flag) {
         for (Uint32 i = 0; i < queueFamilies.size(); i++) {
             if (queueFamilies[i].queueFlags & flag) {
                 return i;
@@ -846,21 +870,20 @@ namespace MobileGL::MG_Backend::DirectVulkan {
         return -1;
     }
 
-    Int VulkanRenderer::GetPresentQueueFamilyIndex(
-        const PhysicalDevice& physicalDevice, VkSurfaceKHR surface,
-        const Vector<VkQueueFamilyProperties>& queueFamilies, Int preferredFamilyIndex) {
+    Int VulkanRenderer::GetPresentQueueFamilyIndex(const PhysicalDevice& physicalDevice, VkSurfaceKHR surface,
+                                                   const Vector<VkQueueFamilyProperties>& queueFamilies,
+                                                   Int preferredFamilyIndex) {
         if (preferredFamilyIndex != -1) {
             VkBool32 supportsPresent = false;
-            vkGetPhysicalDeviceSurfaceSupportKHR(physicalDevice.handle, preferredFamilyIndex, surface, &supportsPresent);
-            if (supportsPresent)
-                return preferredFamilyIndex;
+            vkGetPhysicalDeviceSurfaceSupportKHR(physicalDevice.handle, preferredFamilyIndex, surface,
+                                                 &supportsPresent);
+            if (supportsPresent) return preferredFamilyIndex;
         }
 
         for (Uint32 i = 0; i < queueFamilies.size(); i++) {
             VkBool32 supportsPresent = false;
             vkGetPhysicalDeviceSurfaceSupportKHR(physicalDevice.handle, i, surface, &supportsPresent);
-            if (supportsPresent)
-                return i;
+            if (supportsPresent) return i;
         }
         return -1;
     }
@@ -888,6 +911,38 @@ namespace MobileGL::MG_Backend::DirectVulkan {
             }
         }
         return false;
+    }
+
+    void VulkanRenderer::ShutdownSwapchain() {
+        for (auto fb : m_framebuffers) {
+            vkDestroyFramebuffer(m_device, fb, nullptr);
+        }
+        m_framebuffers.clear();
+
+        if (m_renderPass != VK_NULL_HANDLE) {
+            vkDestroyRenderPass(m_device, m_renderPass, nullptr);
+            m_renderPass = VK_NULL_HANDLE;
+        }
+
+        m_swapchainObject.Shutdown(m_device);
+    }
+
+    void VulkanRenderer::RecreateSwapchain() {
+        // Handle cases like minimize on Windows, where swapchain could return a 0x0 extent
+        const auto swapchainCapabilities = SwapchainObject::GetSwapchainCapabilities(m_physicalDevice.handle, m_surface);
+        if (swapchainCapabilities.capabilities.currentExtent.width == 0 ||
+            swapchainCapabilities.capabilities.currentExtent.height == 0) {
+            return;
+        }
+
+        vkDeviceWaitIdle(m_device);
+
+        ShutdownSwapchain();
+
+        CreateSwapchain();
+        CreateDefaultRenderPass();
+        CreateDefaultFramebuffers();
+        m_frameContext.ResetPerFrameState();
     }
 
 } // namespace MobileGL::MG_Backend::DirectVulkan
