@@ -107,6 +107,7 @@ set(SPIRV_CROSS_STATIC         ON  CACHE BOOL "Prefer static libs" FORCE)
 # add_subdirectory(3rdparty/DiligentCore)
 add_subdirectory(3rdparty/glslang)
 add_subdirectory(3rdparty/SPIRV-Cross)
+add_subdirectory(3rdparty/VulkanMemoryAllocator)
 
 set(XXHASH_BUILD_XXHSUM OFF)
 option(BUILD_SHARED_LIBS OFF)
@@ -208,12 +209,15 @@ set(SOURCE_FILES
     MobileGL/MG_Backend/DirectGLES/Managers.cpp
 
     MobileGL/MG_Backend/DirectVulkan/DirectVulkan.cpp
+    MobileGL/MG_Backend/DirectVulkan/VmaImpl.cpp
     MobileGL/MG_Backend/DirectVulkan/Renderer/VulkanRenderer.cpp
     MobileGL/MG_Backend/DirectVulkan/Renderer/SwapchainObject.cpp
     MobileGL/MG_Backend/DirectVulkan/Renderer/FrameContext.cpp
-#    MobileGL/MG_Backend/DirectVulkan/Managers/ProgramManager.cpp
-#    MobileGL/MG_Backend/DirectVulkan/Managers/VertexInputStateManager.cpp
-#    MobileGL/MG_Backend/DirectVulkan/Managers/RenderStateManager.cpp
+    MobileGL/MG_Backend/DirectVulkan/Renderer/PipelineFactory.cpp
+    MobileGL/MG_Backend/DirectVulkan/Renderer/ProgramFactory.cpp
+    MobileGL/MG_Backend/DirectVulkan/Renderer/VertexInputStateBuilder.cpp
+    MobileGL/MG_Backend/DirectVulkan/Renderer/VertexInputStateFactory.cpp
+    MobileGL/MG_Backend/DirectVulkan/Renderer/VkBufferObject.cpp
 
     MobileGL/MG_State/GLState/Core.cpp
     MobileGL/MG_State/GLState/ErrorState/Error.cpp
@@ -248,7 +252,16 @@ set(MOBILEGL_LINK_LIBRARIES
         SPIRV-Tools-opt
         SPIRV-Tools
         xxHash::xxhash
+        GPUOpen::VulkanMemoryAllocator
 )
+
+set(MOBILEGL_COMPILE_DEF
+        -DVMA_STATIC_VULKAN_FUNCTIONS=0
+        -DVMA_DYNAMIC_VULKAN_FUNCTIONS=1
+        -DVMA_VULKAN_VERSION=1001000
+)
+
+message(STATUS "MOBILEGL_COMPILE_DEF=${MOBILEGL_COMPILE_DEF}")
 
 set(MOBILEGL_INCLUDE_DIR
         ${CMAKE_SOURCE_DIR}/include
@@ -282,8 +295,13 @@ target_include_directories(${CMAKE_PROJECT_NAME} PUBLIC
 )
 
 target_link_libraries(${CMAKE_PROJECT_NAME}
-    PRIVATE
+    PUBLIC
     ${MOBILEGL_LINK_LIBRARIES}
+)
+
+target_compile_definitions(${CMAKE_PROJECT_NAME}
+        PUBLIC
+        ${MOBILEGL_COMPILE_DEF}
 )
 
 if(NOT ANDROID)
@@ -310,8 +328,13 @@ if(NOT ANDROID)
     )
 
     target_link_libraries(${CMAKE_PROJECT_NAME}_s
-        PRIVATE
+        PUBLIC
         ${MOBILEGL_LINK_LIBRARIES}
+    )
+
+    target_compile_definitions(${CMAKE_PROJECT_NAME}_s
+            PUBLIC
+            ${MOBILEGL_COMPILE_DEF}
     )
 endif()
 

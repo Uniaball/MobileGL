@@ -7,6 +7,8 @@
 // End of Source File Header
 
 #include "VulkanRenderer.h"
+#include "VertexInputStateFactory.h"
+#include "VertexInputStateBuilder.h"
 
 #include "MG_State/GLState/ProgramState/ProgramObject.h"
 
@@ -48,7 +50,7 @@ namespace MobileGL::MG_Backend::DirectVulkan {
         return VK_FALSE;
     }
 
-    VulkanRenderer::VulkanRenderer(NativeWindowType window, const RendererConfig& cfg)
+    VulkanRenderer::VulkanRenderer(NativeWindowType window, const VulkanRendererConfig& cfg)
         : m_window(window), m_config(cfg) {
         // Initialize();
     }
@@ -57,154 +59,35 @@ namespace MobileGL::MG_Backend::DirectVulkan {
         Shutdown();
     }
 
-    const char* demoFS = R"(#version 460
-        layout(location = 0) in vec3 fragColor;
-        layout(location = 0) out vec4 outColor;
-        void main() {
-            outColor = vec4(fragColor, 1.0);
+    VkPipeline VulkanRenderer::GetOrCreatePipeline(
+        const MG_State::GLState::ProgramObject& program, Uint64 vertexInputHash,
+        const VkPipelineVertexInputStateCreateInfo& vertexInputState) {
+        MOBILEGL_ASSERT(m_pipelineFactory != nullptr, "PipelineFactory is not initialized");
+        MOBILEGL_ASSERT(m_programFactory != nullptr, "ProgramFactory is not initialized");
+        auto& stages = m_programFactory->GetOrCreatePipelineShaderStages(program, ProgramFactory::CompileOptionBit::None);
+        if (stages.empty()) {
+            MGLOG_W("GetOrCreatePipeline skipped: program has no shader stages");
+            return VK_NULL_HANDLE;
         }
-)";
-    const char* demoVS = R"(#version 460
-    layout(location = 0) out vec3 fragColor;
-    vec2 positions[3] = vec2[](vec2(0.0, -0.5), vec2(0.5, 0.5), vec2(-0.5, 0.5));
-    vec3 colors[3] = vec3[](vec3(1.0, 0.0, 0.0), vec3(0.0, 1.0, 0.0), vec3(0.0, 0.0, 1.0));
-    void main() {
-        gl_Position = vec4(positions[gl_VertexID], 0.0, 1.0);
-        fragColor = colors[gl_VertexID];
+        const Uint64 programHash = m_programFactory->ComputeHash(program, ProgramFactory::CompileOptionBit::None);
+
+        PipelineFactory::PipelineCreatePayload payload{};
+        payload.programHash = programHash;
+        payload.vertexInputHash = vertexInputHash;
+        payload.pipelineLayout = m_pipelineLayout;
+        payload.renderPass = m_renderPassLoad;
+        payload.subpass = 0;
+        payload.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+        payload.stages = &stages;
+        payload.vertexInputState = &vertexInputState;
+        return m_pipelineFactory->GetOrCreatePipeline(payload);
     }
-)";
+
     void VulkanRenderer::PrepareDemoPipeline() {
-        MGLOG_D("PrepareDemoRes called");
-
-        // Create shader&program object
-        auto programObject = MG_State::GLState::ProgramObject(0);
-        auto vsObject = MakeShared<MG_State::GLState::ShaderObject>(ShaderStage::Vertex, 0);
-        vsObject->SetShaderSource(demoVS);
-        vsObject->Compile();
-        if (!vsObject->GetCompileStatus()) {
-            MGLOG_E("Vertex shader compilation failed: %s", vsObject->GetInfoLog().c_str());
-            return;
-        }
-        auto fsObject = MakeShared<MG_State::GLState::ShaderObject>(ShaderStage::Fragment, 1);
-        fsObject->SetShaderSource(demoFS);
-        fsObject->Compile();
-        if (!fsObject->GetCompileStatus()) {
-            MGLOG_E("Fragment shader compilation failed: %s", fsObject->GetInfoLog().c_str());
-            return;
-        }
-        programObject.AttachShader(vsObject);
-        programObject.AttachShader(fsObject);
-        programObject.Link();
-        if (!programObject.GetLinkStatus()) {
-            MGLOG_E("Program linking failed: %s", programObject.GetInfoLog().c_str());
-            return;
-        }
-
-        Vector<Uint> vsSpv;
-        Vector<Uint> fsSpv;
-
-        auto& shaderSpirvs = programObject.GetGeneratedSpirv();
-        auto& attachedShaders = programObject.GetAttachedShaders();
-        for (int index = 0; index < attachedShaders.size(); ++index) {
-            auto& shader = attachedShaders[index];
-            auto& spirvCode = shaderSpirvs[index];
-            if (shader->GetShaderStage() == ShaderStage::Vertex) {
-                vsSpv = spirvCode;
-            } else if (shader->GetShaderStage() == ShaderStage::Fragment) {
-                fsSpv = spirvCode;
-            }
-        }
-
-        VkShaderModuleCreateInfo smci{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
-        smci.codeSize = vsSpv.size() * sizeof(uint32_t);
-        smci.pCode = vsSpv.data();
-        VkShaderModule vs;
-        VK_VERIFY(vkCreateShaderModule(m_device, &smci, nullptr, &vs), "vkCreateShaderModule VS");
-
-        smci.codeSize = fsSpv.size() * sizeof(uint32_t);
-        smci.pCode = fsSpv.data();
-        VkShaderModule fs;
-        VK_VERIFY(vkCreateShaderModule(m_device, &smci, nullptr, &fs), "vkCreateShaderModule FS");
-
-        VkPipelineShaderStageCreateInfo stages[2]{};
-        stages[0] = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO};
-        stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
-        stages[0].module = vs;
-        stages[0].pName = "main";
-        stages[1] = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO};
-        stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-        stages[1].module = fs;
-        stages[1].pName = "main";
+        MGLOG_D("PrepareDemoPipeline called");
 
         VkPipelineLayoutCreateInfo plci{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
         VK_VERIFY(vkCreatePipelineLayout(m_device, &plci, nullptr, &m_pipelineLayout), "vkCreatePipelineLayout");
-
-        // Create the rest of pipeline component
-
-        VkPipelineDynamicStateCreateInfo dynamicState{};
-        dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-        dynamicState.dynamicStateCount = static_cast<uint32_t>(std::size(s_dynamicStates));
-        dynamicState.pDynamicStates = s_dynamicStates;
-
-        VkPipelineVertexInputStateCreateInfo vertexInput{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
-        vertexInput.vertexBindingDescriptionCount = 0;
-        vertexInput.vertexAttributeDescriptionCount = 0;
-
-        VkPipelineInputAssemblyStateCreateInfo ia{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
-        ia.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-
-        VkViewport vp{};
-        vp.x = 0;
-        vp.y = 0;
-        const auto swapchainExtent = m_swapchainObject.GetExtent();
-        vp.width = (float)swapchainExtent.width;
-        vp.height = (float)swapchainExtent.height;
-        vp.minDepth = 0;
-        vp.maxDepth = 1;
-        VkRect2D scissor{{0, 0}, swapchainExtent};
-        VkPipelineViewportStateCreateInfo vpci{VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};
-        vpci.viewportCount = 1;
-        vpci.pViewports = &vp;
-        vpci.scissorCount = 1;
-        vpci.pScissors = &scissor;
-
-        VkPipelineRasterizationStateCreateInfo raster{VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
-        raster.polygonMode = VK_POLYGON_MODE_FILL;
-        raster.cullMode = VK_CULL_MODE_NONE;
-        raster.frontFace = VK_FRONT_FACE_CLOCKWISE;
-        raster.lineWidth = 1.0f;
-
-        VkPipelineMultisampleStateCreateInfo ms{VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
-        ms.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
-
-        VkPipelineColorBlendAttachmentState colorAttach{};
-        colorAttach.colorWriteMask =
-            VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-        colorAttach.blendEnable = VK_FALSE;
-        VkPipelineColorBlendStateCreateInfo blend{VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
-        blend.attachmentCount = 1;
-        blend.pAttachments = &colorAttach;
-
-        // Create Pipeline
-        VkGraphicsPipelineCreateInfo gpi{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
-        gpi.stageCount = 2;
-        gpi.pStages = stages;
-        gpi.pVertexInputState = &vertexInput;
-        gpi.pInputAssemblyState = &ia;
-        gpi.pViewportState = &vpci;
-        gpi.pRasterizationState = &raster;
-        gpi.pMultisampleState = &ms;
-        gpi.pColorBlendState = &blend;
-        gpi.pDynamicState = &dynamicState;
-        gpi.layout = m_pipelineLayout;
-        gpi.renderPass = m_renderPass;
-        gpi.subpass = 0;
-
-        VK_VERIFY(vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &gpi, nullptr, &m_pipeline),
-                  "vkCreateGraphicsPipelines");
-
-        vkDestroyShaderModule(m_device, vs, nullptr);
-        vkDestroyShaderModule(m_device, fs, nullptr);
 
         MGLOG_I("PrepareDemoPipeline completed");
     }
@@ -220,20 +103,22 @@ namespace MobileGL::MG_Backend::DirectVulkan {
         CreateSurface();
         PickPhysicalDevice();
         CreateLogicalDeviceAndQueues();
+        CreateAllocator();
 
         CreateCommandPool();
 
         RecreateSwapchain();
 
+        m_pipelineFactory = MakeUnique<PipelineFactory>(m_device, m_config);
+        m_programFactory = MakeUnique<ProgramFactory>(m_device, m_config);
+        m_vertexInputStateFactory = MakeUnique<VertexInputStateFactory>(m_config);
+
         PrepareDemoPipeline();
         CreateFrameContexts();
 
         // Prime the first frame so Render() always targets an acquired swapchain image.
-        VK_VERIFY(vkWaitForFences(m_device, 1, &m_frameContext.GetCurrentImageInFlightFence(), VK_TRUE, UINT64_MAX));
-        VK_VERIFY(vkResetFences(m_device, 1, &m_frameContext.GetCurrentImageInFlightFence()));
-        VK_VERIFY(vkAcquireNextImageKHR(m_device, m_swapchainObject.GetHandle(), UINT64_MAX,
-                                        m_frameContext.GetCurrentImageAvailableSemaphore(), VK_NULL_HANDLE,
-                                        &m_imageIndexAcquired));
+        VK_VERIFY(m_frameContext.WaitAndAcquireNextImage(m_device, m_swapchainObject.GetHandle(), m_imageIndexAcquired),
+                  "Initialize, WaitAndAcquireNextImage");
 
         MGLOG_D("VulkanRenderer initialized");
     }
@@ -241,14 +126,22 @@ namespace MobileGL::MG_Backend::DirectVulkan {
     void VulkanRenderer::Shutdown() {
         VK_VERIFY(vkDeviceWaitIdle(m_device));
 
-        m_frameContext.Destroy(m_device, m_commandPool);
-
-        if (m_pipeline != VK_NULL_HANDLE) {
-            vkDestroyPipeline(m_device, m_pipeline, nullptr);
+        m_pipelineFactory.reset();
+        m_programFactory.reset();
+        m_vertexInputStateFactory.reset();
+        for (auto& vertexBuffer : m_vertexBuffers) {
+            if (vertexBuffer) {
+                vertexBuffer->Destroy();
+            }
         }
+        m_vertexBuffers.clear();
+        m_indexBuffer.Destroy();
+
+        m_frameContext.Destroy(m_device, m_commandPool);
 
         if (m_pipelineLayout != VK_NULL_HANDLE) {
             vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
+            m_pipelineLayout = VK_NULL_HANDLE;
         }
 
         ShutdownSwapchain();
@@ -257,6 +150,8 @@ namespace MobileGL::MG_Backend::DirectVulkan {
             vkDestroyCommandPool(m_device, m_commandPool, nullptr);
             m_commandPool = VK_NULL_HANDLE;
         }
+
+        DestroyAllocator();
 
         if (m_device != VK_NULL_HANDLE) {
             vkDestroyDevice(m_device, nullptr);
@@ -280,32 +175,319 @@ namespace MobileGL::MG_Backend::DirectVulkan {
         MGLOG_I("VulkanRenderer shut down completed");
     }
 
-    void VulkanRenderer::Render() {
-        VkCommandBuffer& commandBuffer = m_frameContext.GetCurrentCommandBuffer();
-        VK_VERIFY(vkResetCommandBuffer(commandBuffer, 0));
+    void VulkanRenderer::RequestClear(GLbitfield mask, const FloatVec4& color, Float depth, Uint32 stencil) {
+        const GLbitfield supportedMask = GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT;
+        const GLbitfield requestMask = (mask & supportedMask);
+        if (requestMask == 0) {
+            return;
+        }
 
-        // Begin command buffer
-        VkCommandBufferBeginInfo beginInfo{};
-        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-        beginInfo.flags = 0;
-        beginInfo.pInheritanceInfo = nullptr;
-        VK_VERIFY(vkBeginCommandBuffer(commandBuffer, &beginInfo));
+        if ((requestMask & GL_COLOR_BUFFER_BIT) != 0) {
+            m_pendingClearColor.float32[0] = color.x();
+            m_pendingClearColor.float32[1] = color.y();
+            m_pendingClearColor.float32[2] = color.z();
+            m_pendingClearColor.float32[3] = color.w();
+        }
+        if ((requestMask & GL_DEPTH_BUFFER_BIT) != 0) {
+            m_pendingClearDepth = depth;
+        }
+        if ((requestMask & GL_STENCIL_BUFFER_BIT) != 0) {
+            m_pendingClearStencil = stencil;
+        }
+        m_pendingClearMask |= requestMask;
+    }
 
-        // Begin render pass
+    Bool VulkanRenderer::ConsumePendingColorClear(VkClearColorValue& outClearColor) {
+        if ((m_pendingClearMask & GL_COLOR_BUFFER_BIT) == 0) {
+            return false;
+        }
+
+        outClearColor = m_pendingClearColor;
+        m_pendingClearMask &= ~GL_COLOR_BUFFER_BIT;
+        return true;
+    }
+
+    void VulkanRenderer::TransitionSwapchainImageToColorAttachment(VkCommandBuffer commandBuffer, Uint32 imageIndex) {
+        const auto oldLayout = m_swapchainObject.GetImageLayout(imageIndex);
+        if (oldLayout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL) {
+            return;
+        }
+
+        VkImageMemoryBarrier barrier{};
+        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        barrier.srcAccessMask = 0;
+        barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        barrier.oldLayout = oldLayout;
+        barrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.image = m_swapchainObject.GetImage(imageIndex);
+        barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        barrier.subresourceRange.baseMipLevel = 0;
+        barrier.subresourceRange.levelCount = 1;
+        barrier.subresourceRange.baseArrayLayer = 0;
+        barrier.subresourceRange.layerCount = 1;
+
+        vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                             0, 0, nullptr, 0, nullptr, 1, &barrier);
+        m_swapchainObject.SetImageLayout(imageIndex, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+    }
+
+    void VulkanRenderer::RecordColorClear(VkCommandBuffer commandBuffer, const VkClearColorValue& clearColor) {
+        VkClearAttachment clearAttachment{};
+        clearAttachment.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        clearAttachment.colorAttachment = 0;
+        clearAttachment.clearValue.color = clearColor;
+
+        VkClearRect clearRect{};
+        clearRect.rect.offset = {0, 0};
+        clearRect.rect.extent = m_swapchainObject.GetExtent();
+        clearRect.baseArrayLayer = 0;
+        clearRect.layerCount = 1;
+
+        vkCmdClearAttachments(commandBuffer, 1, &clearAttachment, 1, &clearRect);
+    }
+
+    void VulkanRenderer::RecordDepthStencilClear(VkCommandBuffer commandBuffer, GLbitfield mask, Float depth, Uint32 stencil) {
+        VkImageAspectFlags aspectMask = 0;
+        if ((mask & GL_DEPTH_BUFFER_BIT) != 0) {
+            aspectMask |= VK_IMAGE_ASPECT_DEPTH_BIT;
+        }
+        if ((mask & GL_STENCIL_BUFFER_BIT) != 0 && HasStencilComponent(m_depthStencilFormat)) {
+            aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
+        }
+        if (aspectMask == 0) {
+            return;
+        }
+
+        VkClearAttachment clearAttachment{};
+        clearAttachment.aspectMask = aspectMask;
+        clearAttachment.clearValue.depthStencil.depth = depth;
+        clearAttachment.clearValue.depthStencil.stencil = stencil;
+
+        VkClearRect clearRect{};
+        clearRect.rect.offset = {0, 0};
+        clearRect.rect.extent = m_swapchainObject.GetExtent();
+        clearRect.baseArrayLayer = 0;
+        clearRect.layerCount = 1;
+
+        vkCmdClearAttachments(commandBuffer, 1, &clearAttachment, 1, &clearRect);
+    }
+
+    void VulkanRenderer::TransitionDepthStencilImageToAttachment(VkCommandBuffer commandBuffer, Uint32 imageIndex) {
+        if (m_depthStencilImageLayouts.empty()) {
+            return;
+        }
+
+        const auto oldLayout = m_depthStencilImageLayouts[imageIndex];
+        if (oldLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) {
+            return;
+        }
+
+        VkImageMemoryBarrier barrier{};
+        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        barrier.srcAccessMask = 0;
+        barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        barrier.oldLayout = oldLayout;
+        barrier.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.image = m_depthStencilImages[imageIndex];
+        barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+        if (HasStencilComponent(m_depthStencilFormat)) {
+            barrier.subresourceRange.aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
+        }
+        barrier.subresourceRange.baseMipLevel = 0;
+        barrier.subresourceRange.levelCount = 1;
+        barrier.subresourceRange.baseArrayLayer = 0;
+        barrier.subresourceRange.layerCount = 1;
+
+        vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                             VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+                             0, 0, nullptr, 0, nullptr, 1, &barrier);
+        m_depthStencilImageLayouts[imageIndex] = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    }
+
+    void VulkanRenderer::EnsureFrameRecordingStarted() {
+        auto& frame = m_frameContext.GetCurrent();
+        if (frame.isCommandRecording) {
+            return;
+        }
+
+        if (frame.hasCommandBufferRecorded) {
+            MGLOG_W("EnsureFrameRecordingStarted skipped: current frame command buffer is already finalized");
+            return;
+        }
+
+        VkCommandBuffer& commandBuffer = m_frameContext.BeginCommandRecording();
+        TransitionSwapchainImageToColorAttachment(commandBuffer, m_imageIndexAcquired);
+        TransitionDepthStencilImageToAttachment(commandBuffer, m_imageIndexAcquired);
+
+        const Bool useRenderPassClearValue = (m_pendingClearMask & GL_COLOR_BUFFER_BIT) != 0;
+        VkClearValue clearValues[1]{};
+        if (useRenderPassClearValue) {
+            clearValues[0].color = m_pendingClearColor;
+            m_pendingClearMask &= ~GL_COLOR_BUFFER_BIT;
+        }
+
         VkRenderPassBeginInfo renderPassInfo{};
         renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-        renderPassInfo.renderPass = m_renderPass;
+        renderPassInfo.renderPass = useRenderPassClearValue ? m_renderPassClear : m_renderPassLoad;
         renderPassInfo.framebuffer = m_framebuffers[m_imageIndexAcquired];
         renderPassInfo.renderArea.offset = {0, 0};
-        const auto swapchainExtent = m_swapchainObject.GetExtent();
-        renderPassInfo.renderArea.extent = swapchainExtent;
-        VkClearValue clearColor = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
-        renderPassInfo.clearValueCount = 1;
-        renderPassInfo.pClearValues = &clearColor;
+        renderPassInfo.renderArea.extent = m_swapchainObject.GetExtent();
+        renderPassInfo.clearValueCount = useRenderPassClearValue ? 1 : 0;
+        renderPassInfo.pClearValues = useRenderPassClearValue ? clearValues : nullptr;
         vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+        m_isMainRenderPassActive = true;
 
-        // Render commands
-        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline);
+        if ((m_pendingClearMask & (GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT)) != 0) {
+            RecordDepthStencilClear(commandBuffer, m_pendingClearMask, m_pendingClearDepth, m_pendingClearStencil);
+            m_pendingClearMask &= ~(GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+        }
+    }
+
+    void VulkanRenderer::EndFrameRecordingIfNeeded() {
+        auto& frame = m_frameContext.GetCurrent();
+        if (!frame.isCommandRecording) {
+            return;
+        }
+
+        if (m_isMainRenderPassActive) {
+            vkCmdEndRenderPass(frame.commandBuffer);
+            m_isMainRenderPassActive = false;
+        }
+        m_frameContext.EndCommandRecording();
+    }
+
+    Bool VulkanRenderer::UploadAndBindVertexStreams(
+        const VertexInputStateFactory::BackendVertexInputState& vertexInputState,
+        const MG_State::GLState::VertexArrayObject& vertexArray,
+        VkCommandBuffer commandBuffer) {
+        if (vertexInputState.bindings.empty()) {
+            return true;
+        }
+
+        const auto bindingCount = vertexInputState.bindings.size();
+        if (vertexInputState.bindingBufferKeys.size() != bindingCount) {
+            MGLOG_E("UploadAndBindVertexStreams failed: binding metadata mismatch");
+            return false;
+        }
+
+        if (m_vertexBuffers.size() < bindingCount) {
+            m_vertexBuffers.resize(bindingCount);
+        }
+
+        Vector<VkBuffer> vkBuffers(bindingCount, VK_NULL_HANDLE);
+        Vector<VkDeviceSize> vkOffsets(bindingCount, 0);
+
+        for (SizeT binding = 0; binding < bindingCount; ++binding) {
+            const SizeT bufferKey = vertexInputState.bindingBufferKeys[binding];
+            const MG_State::GLState::BufferObject* sourceBuffer = nullptr;
+            for (Uint32 location = 0; location < MG_State::GLState::VertexArrayObject::MAX_VERTEX_ATTRIBS; ++location) {
+                const auto& attr = vertexArray.GetAttribute(location);
+                if (!attr.Enabled || !attr.Buffer) {
+                    continue;
+                }
+                if (reinterpret_cast<SizeT>(attr.Buffer.get()) == bufferKey) {
+                    sourceBuffer = attr.Buffer.get();
+                    break;
+                }
+            }
+
+            if (!sourceBuffer) {
+                MGLOG_W("UploadAndBindVertexStreams skipped: no source buffer for binding %zu", binding);
+                return false;
+            }
+
+            const auto sourceData = sourceBuffer->GetDataReadOnly();
+            if (!sourceData || sourceData->empty()) {
+                MGLOG_W("UploadAndBindVertexStreams skipped: source buffer has no data for binding %zu", binding);
+                return false;
+            }
+
+            if (!m_vertexBuffers[binding]) {
+                m_vertexBuffers[binding] = MakeUnique<VkBufferObject>();
+            }
+
+            auto& backendBuffer = *m_vertexBuffers[binding];
+            const SizeT sourceSize = sourceBuffer->GetSize();
+            if (!backendBuffer.IsValid() || backendBuffer.GetSize() < sourceSize) {
+                backendBuffer.Destroy();
+                const Bool created = backendBuffer.Create(
+                    m_allocator, static_cast<VkDeviceSize>(sourceSize),
+                    VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                    VMA_MEMORY_USAGE_AUTO,
+                    VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT);
+                if (!created) {
+                    MGLOG_E("UploadAndBindVertexStreams skipped: failed to create backend buffer for binding %zu", binding);
+                    return false;
+                }
+            }
+
+            if (!backendBuffer.Upload(sourceData->data(), static_cast<VkDeviceSize>(sourceSize), 0)) {
+                MGLOG_E("UploadAndBindVertexStreams skipped: failed to upload binding %zu", binding);
+                return false;
+            }
+
+            vkBuffers[binding] = backendBuffer.GetHandle();
+        }
+
+        vkCmdBindVertexBuffers(commandBuffer, 0, static_cast<Uint32>(bindingCount), vkBuffers.data(), vkOffsets.data());
+        return true;
+    }
+
+    void VulkanRenderer::DrawArrays(const DrawArrayPayload& payload) {
+        if (payload.mode != GL_TRIANGLES) {
+            MGLOG_W("DrawArrays skipped: primitive mode %u is not supported yet", payload.mode);
+            return;
+        }
+
+        const VertexInputStateFactory::BackendVertexInputState* vertexInputState = nullptr;
+        if (payload.vertexArray && m_vertexInputStateFactory) {
+            vertexInputState = &m_vertexInputStateFactory->GetOrCreateVertexInputState(*payload.vertexArray);
+        }
+
+        EnsureFrameRecordingStarted();
+        auto& frame = m_frameContext.GetCurrent();
+        if (!frame.isCommandRecording || !m_isMainRenderPassActive) {
+            MGLOG_W("DrawArrays skipped: frame recording was not started");
+            return;
+        }
+
+        VkCommandBuffer& commandBuffer = frame.commandBuffer;
+        const auto swapchainExtent = m_swapchainObject.GetExtent();
+
+        if (payload.program == nullptr) {
+            MGLOG_W("DrawArrays skipped: no current program is bound");
+            return;
+        }
+
+        const Uint64 vertexInputHash = vertexInputState ? vertexInputState->hash : 0;
+        const VkPipelineVertexInputStateCreateInfo* vertexInputInfo =
+            vertexInputState ? &vertexInputState->state : nullptr;
+        if (!vertexInputInfo) {
+            VertexInputStateBuilder emptyVertexInputBuilder;
+            vertexInputInfo = &emptyVertexInputBuilder.Build();
+        }
+
+        VkPipeline pipelineToBind = GetOrCreatePipeline(*payload.program, vertexInputHash, *vertexInputInfo);
+        if (pipelineToBind == VK_NULL_HANDLE) {
+            MGLOG_W("DrawArrays skipped: failed to create/get pipeline");
+            return;
+        }
+
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineToBind);
+
+        if (vertexInputState && !vertexInputState->bindings.empty()) {
+            if (!payload.vertexArray) {
+                MGLOG_W("DrawArrays skipped: vertex input requires VAO");
+                return;
+            }
+            if (!UploadAndBindVertexStreams(*vertexInputState, *payload.vertexArray, commandBuffer)) {
+                return;
+            }
+        }
 
         VkViewport viewport{};
         viewport.x = 0.0f;
@@ -321,90 +503,165 @@ namespace MobileGL::MG_Backend::DirectVulkan {
         scissor.extent = swapchainExtent;
         vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
-        vkCmdDraw(commandBuffer, 3, 1, 0, 0);
+        vkCmdDraw(commandBuffer, static_cast<Uint32>(payload.count), 1, static_cast<Uint32>(payload.first), 0);
+    }
 
-        // End render pass
-        vkCmdEndRenderPass(commandBuffer);
+    void VulkanRenderer::DrawElements(const DrawElementPayload& payload) {
+        if (payload.drawArray.mode != GL_TRIANGLES) {
+            MGLOG_W("DrawElements skipped: primitive mode %u is not supported yet", payload.drawArray.mode);
+            return;
+        }
 
-        // End command buffer
-        VK_VERIFY(vkEndCommandBuffer(commandBuffer));
-        m_frameContext.SetCurrentCommandBufferRecorded(true);
+        EnsureFrameRecordingStarted();
+        auto& frame = m_frameContext.GetCurrent();
+        if (!frame.isCommandRecording || !m_isMainRenderPassActive) {
+            MGLOG_W("DrawElements skipped: frame recording was not started");
+            return;
+        }
+
+        VkIndexType vkIndexType = VK_INDEX_TYPE_MAX_ENUM;
+        switch (payload.indexType) {
+        case GL_UNSIGNED_SHORT:
+            vkIndexType = VK_INDEX_TYPE_UINT16;
+            break;
+        case GL_UNSIGNED_INT:
+            vkIndexType = VK_INDEX_TYPE_UINT32;
+            break;
+        default:
+            MGLOG_W("DrawElements skipped: index type %u is not supported yet", payload.indexType);
+            return;
+        }
+
+        MOBILEGL_ASSERT(payload.indexData != nullptr, "DrawElements requires non-null indexData");
+        MOBILEGL_ASSERT(payload.indexDataSizeBytes > 0, "DrawElements requires non-zero index data size");
+
+        const VertexInputStateFactory::BackendVertexInputState* vertexInputState = nullptr;
+        if (payload.drawArray.vertexArray && m_vertexInputStateFactory) {
+            vertexInputState = &m_vertexInputStateFactory->GetOrCreateVertexInputState(*payload.drawArray.vertexArray);
+        }
+
+        if (payload.drawArray.program == nullptr) {
+            MGLOG_W("DrawElements skipped: no current program is bound");
+            return;
+        }
+
+        const Uint64 vertexInputHash = vertexInputState ? vertexInputState->hash : 0;
+        const VkPipelineVertexInputStateCreateInfo* vertexInputInfo =
+            vertexInputState ? &vertexInputState->state : nullptr;
+        if (!vertexInputInfo) {
+            VertexInputStateBuilder emptyVertexInputBuilder;
+            vertexInputInfo = &emptyVertexInputBuilder.Build();
+        }
+
+        VkPipeline pipelineToBind = GetOrCreatePipeline(*payload.drawArray.program, vertexInputHash, *vertexInputInfo);
+        if (pipelineToBind == VK_NULL_HANDLE) {
+            MGLOG_W("DrawElements skipped: failed to create/get pipeline");
+            return;
+        }
+
+        if (!m_indexBuffer.IsValid() || m_indexBuffer.GetSize() < payload.indexDataSizeBytes) {
+            m_indexBuffer.Destroy();
+            const Bool created = m_indexBuffer.Create(
+                m_allocator, static_cast<VkDeviceSize>(payload.indexDataSizeBytes),
+                VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+                VMA_MEMORY_USAGE_AUTO,
+                VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT);
+            if (!created) {
+                MGLOG_E("DrawElements skipped: failed to create index buffer");
+                return;
+            }
+        }
+
+        if (!m_indexBuffer.Upload(payload.indexData, static_cast<VkDeviceSize>(payload.indexDataSizeBytes), 0)) {
+            MGLOG_E("DrawElements skipped: failed to upload index data");
+            return;
+        }
+
+        VkCommandBuffer& commandBuffer = frame.commandBuffer;
+        const auto swapchainExtent = m_swapchainObject.GetExtent();
+
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineToBind);
+
+        if (vertexInputState && !vertexInputState->bindings.empty()) {
+            if (!payload.drawArray.vertexArray) {
+                MGLOG_W("DrawElements skipped: vertex input requires VAO");
+                return;
+            }
+            if (!UploadAndBindVertexStreams(*vertexInputState, *payload.drawArray.vertexArray, commandBuffer)) {
+                return;
+            }
+        }
+
+        VkViewport viewport{};
+        viewport.x = 0.0f;
+        viewport.y = 0.0f;
+        viewport.width = static_cast<float>(swapchainExtent.width);
+        viewport.height = static_cast<float>(swapchainExtent.height);
+        viewport.minDepth = 0.0f;
+        viewport.maxDepth = 1.0f;
+        vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+
+        VkRect2D scissor{};
+        scissor.offset = {0, 0};
+        scissor.extent = swapchainExtent;
+        vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+
+        vkCmdBindIndexBuffer(commandBuffer, m_indexBuffer.GetHandle(), 0, vkIndexType);
+        vkCmdDrawIndexed(commandBuffer, static_cast<Uint32>(payload.drawArray.count), 1, 0, 0, 0);
+    }
+
+    void VulkanRenderer::Render() {
+        // Route test rendering through the same frame-start logic used by draw calls,
+        // so pending glClear() state can be consumed consistently.
+        EnsureFrameRecordingStarted();
+        auto& frame = m_frameContext.GetCurrent();
+        if (!frame.isCommandRecording || !m_isMainRenderPassActive) {
+            MGLOG_W("Render skipped: frame recording was not started");
+            return;
+        }
+
+        VkCommandBuffer& commandBuffer = frame.commandBuffer;
+        const auto swapchainExtent = m_swapchainObject.GetExtent();
+
+        (void)commandBuffer;
+        (void)swapchainExtent;
     }
 
     void VulkanRenderer::Present() {
         MOBILEGL_ASSERT(m_imageIndexAcquired < m_swapchainObject.GetImageCount(),
                         "Present, acquired image index out of range");
-        VkCommandBuffer& commandBuffer = m_frameContext.GetCurrentCommandBuffer();
-        const Bool hasRecordedWork = m_frameContext.HasCurrentCommandBufferRecorded();
-        Bool needsLayoutTransitionForPresent = false;
-
-        if (!hasRecordedWork) {
-            const auto acquiredImageLayout = m_swapchainObject.GetImageLayout(m_imageIndexAcquired);
-            if (acquiredImageLayout != VK_IMAGE_LAYOUT_PRESENT_SRC_KHR &&
-                acquiredImageLayout != VK_IMAGE_LAYOUT_SHARED_PRESENT_KHR) {
-                needsLayoutTransitionForPresent = true;
-
-                VK_VERIFY(vkResetCommandBuffer(commandBuffer, 0),
-                          "Present, vkResetCommandBuffer(layout transition)");
-
-                VkCommandBufferBeginInfo beginInfo{};
-                beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-                VK_VERIFY(vkBeginCommandBuffer(commandBuffer, &beginInfo),
-                          "Present, vkBeginCommandBuffer(layout transition)");
-
-                VkImageMemoryBarrier presentBarrier{};
-                presentBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-                presentBarrier.srcAccessMask = 0;
-                presentBarrier.dstAccessMask = 0;
-                presentBarrier.oldLayout = acquiredImageLayout;
-                presentBarrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-                presentBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-                presentBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-                presentBarrier.image = m_swapchainObject.GetImage(m_imageIndexAcquired);
-                presentBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-                presentBarrier.subresourceRange.baseMipLevel = 0;
-                presentBarrier.subresourceRange.levelCount = 1;
-                presentBarrier.subresourceRange.baseArrayLayer = 0;
-                presentBarrier.subresourceRange.layerCount = 1;
-                vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-                                     VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, nullptr, 0, nullptr, 1,
-                                     &presentBarrier);
-
-                VK_VERIFY(vkEndCommandBuffer(commandBuffer),
-                          "Present, vkEndCommandBuffer(layout transition)");
+        auto& frame = m_frameContext.GetCurrent();
+        if (m_pendingClearMask != 0 && frame.isCommandRecording && m_isMainRenderPassActive) {
+            if ((m_pendingClearMask & GL_COLOR_BUFFER_BIT) != 0) {
+                RecordColorClear(frame.commandBuffer, m_pendingClearColor);
             }
+            if ((m_pendingClearMask & (GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT)) != 0) {
+                RecordDepthStencilClear(frame.commandBuffer, m_pendingClearMask, m_pendingClearDepth, m_pendingClearStencil);
+            }
+            m_pendingClearMask = 0;
+        } else if (m_pendingClearMask != 0 && frame.hasCommandBufferRecorded) {
+            MGLOG_W("Dropping pending clear for current frame because command buffer is already finalized");
+            m_pendingClearMask = 0;
+        } else if (m_pendingClearMask != 0) {
+            EnsureFrameRecordingStarted();
         }
+        EndFrameRecordingIfNeeded();
 
-        const Bool shouldSubmitCommandBuffer = hasRecordedWork || needsLayoutTransitionForPresent;
+        const auto acquiredImageLayout = m_swapchainObject.GetImageLayout(m_imageIndexAcquired);
+        const Bool needsLayoutTransitionForPresent =
+            m_frameContext.TransitionToPresent(m_swapchainObject.GetImage(m_imageIndexAcquired), acquiredImageLayout);
+        const Bool shouldSubmitCommandBuffer = frame.hasCommandBufferRecorded || needsLayoutTransitionForPresent;
 
         // 1) Submit current frame work.
-        VkSubmitInfo submitInfo{};
-        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-        VkSemaphore waitSemaphores[] = {m_frameContext.GetCurrentImageAvailableSemaphore()};
-        VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT};
-        submitInfo.waitSemaphoreCount = 1;
-        submitInfo.pWaitSemaphores = waitSemaphores;
-        submitInfo.pWaitDstStageMask = waitStages;
-        submitInfo.commandBufferCount = shouldSubmitCommandBuffer ? 1U : 0U;
-        submitInfo.pCommandBuffers = shouldSubmitCommandBuffer ? &commandBuffer : nullptr;
-        VkSemaphore signalSemaphores[] = {m_frameContext.GetCurrentRenderFinishedSemaphore()};
-        submitInfo.signalSemaphoreCount = 1;
-        submitInfo.pSignalSemaphores = signalSemaphores;
-        VK_VERIFY(vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, m_frameContext.GetCurrentImageInFlightFence()));
-        m_frameContext.SetCurrentCommandBufferRecorded(false);
+        auto submitPacket = m_frameContext.GetSubmitInfo(shouldSubmitCommandBuffer);
+        VK_VERIFY(vkQueueSubmit(m_graphicsQueue, 1, &submitPacket.submitInfo, frame.imageInFlightFence));
+        frame.isCommandRecording = false;
+        frame.hasCommandBufferRecorded = false;
         m_swapchainObject.SetImageLayout(m_imageIndexAcquired, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
 
         // 2) Present current frame.
-        VkPresentInfoKHR presentInfo{};
-        presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-        presentInfo.waitSemaphoreCount = 1;
-        presentInfo.pWaitSemaphores = signalSemaphores;
-        VkSwapchainKHR swapChains[] = {m_swapchainObject.GetHandle()};
-        presentInfo.swapchainCount = 1;
-        presentInfo.pSwapchains = swapChains;
-        presentInfo.pImageIndices = &m_imageIndexAcquired;
-        presentInfo.pResults = nullptr;
-        auto result = vkQueuePresentKHR(m_presentQueue, &presentInfo);
+        auto presentPacket = m_frameContext.GetPresentInfo(m_swapchainObject.GetHandle(), m_imageIndexAcquired);
+        auto result = vkQueuePresentKHR(m_presentQueue, &presentPacket.presentInfo);
         if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
             MGLOG_D("Present, vkQueuePresentKHR got %d, recreating swapchain", result);
             RecreateSwapchain();
@@ -413,17 +670,10 @@ namespace MobileGL::MG_Backend::DirectVulkan {
         VK_VERIFY(result, "Present, vkQueuePresentKHR");
 
         // 3) Advance frame slot.
-        m_frameContext.AdvanceFrame();
+        m_frameContext.AdvanceToNext();
 
         // 4) Wait/reset/acquire for next frame.
-        VK_VERIFY(vkWaitForFences(m_device, 1, &m_frameContext.GetCurrentImageInFlightFence(), VK_TRUE, UINT64_MAX),
-                  "Present, vkWaitForFences");
-        VK_VERIFY(vkResetFences(m_device, 1, &m_frameContext.GetCurrentImageInFlightFence()),
-                  "Present, vkResetFences");
-        result =
-            vkAcquireNextImageKHR(m_device, m_swapchainObject.GetHandle(), UINT64_MAX,
-                                  m_frameContext.GetCurrentImageAvailableSemaphore(), VK_NULL_HANDLE,
-                                  &m_imageIndexAcquired);
+        result = m_frameContext.WaitAndAcquireNextImage(m_device, m_swapchainObject.GetHandle(), m_imageIndexAcquired);
         if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
             MGLOG_D("Present, vkAcquireNextImageKHR got %d, recreating swapchain", result);
             RecreateSwapchain();
@@ -760,11 +1010,158 @@ namespace MobileGL::MG_Backend::DirectVulkan {
         MGLOG_I("Queues got successfully.");
     }
 
+    void VulkanRenderer::CreateAllocator() {
+        MOBILEGL_ASSERT(m_instance != VK_NULL_HANDLE, "CreateAllocator requires valid VkInstance");
+        MOBILEGL_ASSERT(m_physicalDevice.handle != VK_NULL_HANDLE, "CreateAllocator requires valid physical device");
+        MOBILEGL_ASSERT(m_device != VK_NULL_HANDLE, "CreateAllocator requires valid VkDevice");
+
+        if (m_allocator != nullptr) {
+            return;
+        }
+
+        VmaAllocatorCreateInfo allocatorInfo{};
+        VmaVulkanFunctions vulkanFunctions{};
+        vulkanFunctions.vkGetInstanceProcAddr = vkGetInstanceProcAddr;
+        vulkanFunctions.vkGetDeviceProcAddr = vkGetDeviceProcAddr;
+        allocatorInfo.instance = m_instance;
+        allocatorInfo.physicalDevice = m_physicalDevice.handle;
+        allocatorInfo.device = m_device;
+        allocatorInfo.pVulkanFunctions = &vulkanFunctions;
+        allocatorInfo.vulkanApiVersion = VK_API_VERSION_1_0;
+
+        VK_VERIFY(vmaCreateAllocator(&allocatorInfo, &m_allocator), "vmaCreateAllocator");
+    }
+
+    void VulkanRenderer::DestroyAllocator() {
+        if (m_allocator != nullptr) {
+            vmaDestroyAllocator(m_allocator);
+            m_allocator = nullptr;
+        }
+    }
+
     void VulkanRenderer::CreateSwapchain() {
         m_swapchainObject.Create(m_device, m_physicalDevice.handle, m_surface,
                                  static_cast<Uint32>(m_physicalDevice.queueFamilies.graphicsFamily),
                                  static_cast<Uint32>(m_physicalDevice.queueFamilies.presentFamily),
                                  m_config.MaxFramesInFlight);
+    }
+
+    Uint32 VulkanRenderer::FindMemoryType(Uint32 typeFilter, VkMemoryPropertyFlags properties) const {
+        VkPhysicalDeviceMemoryProperties memProperties{};
+        vkGetPhysicalDeviceMemoryProperties(m_physicalDevice.handle, &memProperties);
+
+        for (Uint32 i = 0; i < memProperties.memoryTypeCount; i++) {
+            if ((typeFilter & (1 << i)) && (memProperties.memoryTypes[i].propertyFlags & properties) == properties) {
+                return i;
+            }
+        }
+
+        MOBILEGL_ASSERT(false, "Failed to find suitable memory type.");
+        return 0;
+    }
+
+    Bool VulkanRenderer::HasStencilComponent(VkFormat format) {
+        return format == VK_FORMAT_D24_UNORM_S8_UINT || format == VK_FORMAT_D32_SFLOAT_S8_UINT;
+    }
+
+    VkFormat VulkanRenderer::FindSupportedDepthStencilFormat(VkPhysicalDevice physicalDevice) {
+        const VkFormat candidates[] = {
+            VK_FORMAT_D24_UNORM_S8_UINT,
+            VK_FORMAT_D32_SFLOAT_S8_UINT,
+            VK_FORMAT_D32_SFLOAT
+        };
+        for (VkFormat format : candidates) {
+            VkFormatProperties props{};
+            vkGetPhysicalDeviceFormatProperties(physicalDevice, format, &props);
+            if ((props.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) != 0) {
+                return format;
+            }
+        }
+        return VK_FORMAT_UNDEFINED;
+    }
+
+    void VulkanRenderer::CreateDepthStencilResources() {
+        const auto imageCount = static_cast<Uint32>(m_swapchainObject.GetImageCount());
+        if (imageCount == 0) {
+            return;
+        }
+
+        m_depthStencilFormat = FindSupportedDepthStencilFormat(m_physicalDevice.handle);
+        MOBILEGL_ASSERT(m_depthStencilFormat != VK_FORMAT_UNDEFINED, "No supported depth/stencil format found.");
+
+        const auto extent = m_swapchainObject.GetExtent();
+        m_depthStencilImages.assign(imageCount, VK_NULL_HANDLE);
+        m_depthStencilImageMemories.assign(imageCount, VK_NULL_HANDLE);
+        m_depthStencilImageViews.assign(imageCount, VK_NULL_HANDLE);
+        m_depthStencilImageLayouts.assign(imageCount, VK_IMAGE_LAYOUT_UNDEFINED);
+
+        for (Uint32 i = 0; i < imageCount; ++i) {
+            VkImageCreateInfo imageInfo{};
+            imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+            imageInfo.imageType = VK_IMAGE_TYPE_2D;
+            imageInfo.extent.width = extent.width;
+            imageInfo.extent.height = extent.height;
+            imageInfo.extent.depth = 1;
+            imageInfo.mipLevels = 1;
+            imageInfo.arrayLayers = 1;
+            imageInfo.format = m_depthStencilFormat;
+            imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+            imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            imageInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+            imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+            imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+            VK_VERIFY(vkCreateImage(m_device, &imageInfo, nullptr, &m_depthStencilImages[i]), "vkCreateImage(depth)");
+
+            VkMemoryRequirements memRequirements{};
+            vkGetImageMemoryRequirements(m_device, m_depthStencilImages[i], &memRequirements);
+
+            VkMemoryAllocateInfo allocInfo{};
+            allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+            allocInfo.allocationSize = memRequirements.size;
+            allocInfo.memoryTypeIndex = FindMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+            VK_VERIFY(vkAllocateMemory(m_device, &allocInfo, nullptr, &m_depthStencilImageMemories[i]), "vkAllocateMemory(depth)");
+            VK_VERIFY(vkBindImageMemory(m_device, m_depthStencilImages[i], m_depthStencilImageMemories[i], 0), "vkBindImageMemory(depth)");
+
+            VkImageViewCreateInfo viewInfo{};
+            viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+            viewInfo.image = m_depthStencilImages[i];
+            viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+            viewInfo.format = m_depthStencilFormat;
+            viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+            if (HasStencilComponent(m_depthStencilFormat)) {
+                viewInfo.subresourceRange.aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
+            }
+            viewInfo.subresourceRange.baseMipLevel = 0;
+            viewInfo.subresourceRange.levelCount = 1;
+            viewInfo.subresourceRange.baseArrayLayer = 0;
+            viewInfo.subresourceRange.layerCount = 1;
+            VK_VERIFY(vkCreateImageView(m_device, &viewInfo, nullptr, &m_depthStencilImageViews[i]), "vkCreateImageView(depth)");
+        }
+    }
+
+    void VulkanRenderer::DestroyDepthStencilResources() {
+        for (auto view : m_depthStencilImageViews) {
+            if (view != VK_NULL_HANDLE) {
+                vkDestroyImageView(m_device, view, nullptr);
+            }
+        }
+        m_depthStencilImageViews.clear();
+
+        for (auto image : m_depthStencilImages) {
+            if (image != VK_NULL_HANDLE) {
+                vkDestroyImage(m_device, image, nullptr);
+            }
+        }
+        m_depthStencilImages.clear();
+
+        for (auto memory : m_depthStencilImageMemories) {
+            if (memory != VK_NULL_HANDLE) {
+                vkFreeMemory(m_device, memory, nullptr);
+            }
+        }
+        m_depthStencilImageMemories.clear();
+        m_depthStencilImageLayouts.clear();
+        m_depthStencilFormat = VK_FORMAT_UNDEFINED;
     }
 
     void VulkanRenderer::CreateCommandPool() {
@@ -775,30 +1172,50 @@ namespace MobileGL::MG_Backend::DirectVulkan {
         MGLOG_I("Command pool created");
     }
 
-    void VulkanRenderer::CreateDefaultRenderPass() {
+    VkRenderPass VulkanRenderer::CreateDefaultRenderPass(VkAttachmentLoadOp loadOp) {
         VkAttachmentDescription color{};
         color.format = m_swapchainObject.GetSurfaceFormat().format;
         color.samples = VK_SAMPLE_COUNT_1_BIT;
-        color.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        color.loadOp = loadOp;
         color.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-        color.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        color.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
         color.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
+        VkAttachmentDescription depthStencil{};
+        depthStencil.format = m_depthStencilFormat;
+        depthStencil.samples = VK_SAMPLE_COUNT_1_BIT;
+        depthStencil.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+        depthStencil.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        depthStencil.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+        depthStencil.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        depthStencil.initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        depthStencil.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
         VkAttachmentReference colorRef{0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
+        VkAttachmentReference depthStencilRef{1, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
         VkSubpassDescription sub{};
         sub.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
         sub.colorAttachmentCount = 1;
         sub.pColorAttachments = &colorRef;
+        sub.pDepthStencilAttachment = &depthStencilRef;
+
+        VkAttachmentDescription attachments[] = {color, depthStencil};
 
         VkRenderPassCreateInfo rpci{VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO};
-        rpci.attachmentCount = 1;
-        rpci.pAttachments = &color;
+        rpci.attachmentCount = static_cast<Uint32>(std::size(attachments));
+        rpci.pAttachments = attachments;
         rpci.subpassCount = 1;
         rpci.pSubpasses = &sub;
 
-        VK_VERIFY(vkCreateRenderPass(m_device, &rpci, nullptr, &m_renderPass), "vkCreateRenderPass");
+        VkRenderPass renderPass = VK_NULL_HANDLE;
+        VK_VERIFY(vkCreateRenderPass(m_device, &rpci, nullptr, &renderPass), "vkCreateRenderPass");
+        return renderPass;
+    }
 
-        MGLOG_D("RenderPass created.");
+    void VulkanRenderer::CreateDefaultRenderPass() {
+        m_renderPassLoad = CreateDefaultRenderPass(VK_ATTACHMENT_LOAD_OP_LOAD);
+        m_renderPassClear = CreateDefaultRenderPass(VK_ATTACHMENT_LOAD_OP_CLEAR);
+        MGLOG_D("RenderPasses created (LOAD/CLEAR).");
     }
 
     void VulkanRenderer::CreateDefaultFramebuffers() {
@@ -807,11 +1224,11 @@ namespace MobileGL::MG_Backend::DirectVulkan {
         const auto swapchainExtent = m_swapchainObject.GetExtent();
         Vector<VkFramebuffer>& fbs = m_framebuffers;
         fbs.reserve(imageViews.size());
-        for (auto iv : imageViews) {
-            VkImageView attachments[] = {iv};
+        for (SizeT i = 0; i < imageViews.size(); ++i) {
+            VkImageView attachments[] = {imageViews[i], m_depthStencilImageViews[i]};
             VkFramebufferCreateInfo fbci{VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
-            fbci.renderPass = m_renderPass;
-            fbci.attachmentCount = 1;
+            fbci.renderPass = m_renderPassLoad;
+            fbci.attachmentCount = static_cast<Uint32>(std::size(attachments));
             fbci.pAttachments = attachments;
             fbci.width = swapchainExtent.width;
             fbci.height = swapchainExtent.height;
@@ -919,9 +1336,16 @@ namespace MobileGL::MG_Backend::DirectVulkan {
         }
         m_framebuffers.clear();
 
-        if (m_renderPass != VK_NULL_HANDLE) {
-            vkDestroyRenderPass(m_device, m_renderPass, nullptr);
-            m_renderPass = VK_NULL_HANDLE;
+        DestroyDepthStencilResources();
+
+        if (m_renderPassClear != VK_NULL_HANDLE) {
+            vkDestroyRenderPass(m_device, m_renderPassClear, nullptr);
+            m_renderPassClear = VK_NULL_HANDLE;
+        }
+
+        if (m_renderPassLoad != VK_NULL_HANDLE) {
+            vkDestroyRenderPass(m_device, m_renderPassLoad, nullptr);
+            m_renderPassLoad = VK_NULL_HANDLE;
         }
 
         m_swapchainObject.Shutdown(m_device);
@@ -940,9 +1364,17 @@ namespace MobileGL::MG_Backend::DirectVulkan {
         ShutdownSwapchain();
 
         CreateSwapchain();
+        CreateDepthStencilResources();
         CreateDefaultRenderPass();
         CreateDefaultFramebuffers();
-        m_frameContext.ResetPerFrameState();
+        if (m_pipelineFactory) {
+            m_pipelineFactory->DestroyAll();
+        }
+        if (m_frameContext.GetFrameCount() > 0) {
+            m_frameContext.GetCurrent().isCommandRecording = false;
+            m_frameContext.GetCurrent().hasCommandBufferRecorded = false;
+        }
+        m_isMainRenderPassActive = false;
     }
 
 } // namespace MobileGL::MG_Backend::DirectVulkan
