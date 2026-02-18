@@ -8,6 +8,7 @@
 
 #include "DirectVulkan.h"
 #include "MG_State/GLState/Core.h"
+#include "MG_Impl/GLImpl/Framebuffer/GL_Framebuffer.h"
 
 namespace MobileGL::MG_Backend::DirectVulkan {
     UniquePtr<VulkanRenderer> pVulkanRenderer = nullptr;
@@ -16,10 +17,23 @@ namespace MobileGL::MG_Backend::DirectVulkan {
         MOBILEGL_ASSERT(pVulkanRenderer, "DirectVulkan::Clear called with null VulkanRenderer");
         MOBILEGL_ASSERT(MG_State::pGLContext, "DirectVulkan::Clear called with null GL context");
 
+        const auto& drawFboSlot = MG_State::pGLContext->GetFramebufferBindingSlot(FramebufferTarget::Draw);
+        const auto drawFbo = drawFboSlot.GetBoundObject();
+        const auto defaultFboInfo = MG_Impl::GLImpl::FramebufferImpl::pDefaultFramebufferInfo;
+        const auto defaultFbo = defaultFboInfo ? defaultFboInfo->defaultFBO : nullptr;
+        const Bool isDefaultFboTarget = (drawFbo == defaultFbo) || (drawFbo == nullptr && defaultFbo != nullptr);
+        Uint drawFboExternalIndex = 0;
+        if (drawFbo) {
+            drawFboExternalIndex = drawFbo->GetExternalIndex();
+        } else if (defaultFbo) {
+            drawFboExternalIndex = defaultFbo->GetExternalIndex();
+        }
+
         const auto& clearColor = MG_State::pGLContext->GetClearColor();
         const auto clearDepth = MG_State::pGLContext->GetClearDepth();
         const auto clearStencil = static_cast<Uint32>(MG_State::pGLContext->GetClearStencil());
-        pVulkanRenderer->RequestClear(mask, clearColor, clearDepth, clearStencil);
+        pVulkanRenderer->RequestClear(mask, clearColor, clearDepth, clearStencil, drawFboExternalIndex,
+                                      isDefaultFboTarget);
     }
 
     void DrawElements(GLenum mode, GLsizei count, GLenum type, const void* indices) {
@@ -87,32 +101,7 @@ namespace MobileGL::MG_Backend::DirectVulkan {
         payload.drawArray.program = currentProgram ? currentProgram.get() : nullptr;
         payload.drawArray.vertexArray = vao.get();
         payload.indexType = type;
-        payload.indexData = indexData->data() + byteOffset;
-        payload.indexDataSizeBytes = requiredBytes;
-
-        const auto& attr0 = vao->GetAttribute(0);
-        if (attr0.Enabled && attr0.Buffer) {
-            const auto positionData = attr0.Buffer->GetDataReadOnly();
-            if (positionData && !positionData->empty()) {
-                payload.drawArray.hasPositionStream = true;
-                payload.drawArray.positionData = positionData->data();
-                payload.drawArray.positionDataSizeBytes = attr0.Buffer->GetSize();
-                payload.drawArray.positionOffsetBytes = attr0.Offset;
-                payload.drawArray.positionStrideBytes = attr0.Stride > 0 ? static_cast<SizeT>(attr0.Stride) : 0;
-                payload.drawArray.positionSize = attr0.Size;
-                payload.drawArray.positionNormalized = attr0.Normalized;
-
-                switch (attr0.Type) {
-                case DataType::Float32:
-                    payload.drawArray.positionType = GL_FLOAT;
-                    break;
-                default:
-                    payload.drawArray.positionType = GL_FLOAT;
-                    payload.drawArray.hasPositionStream = false;
-                    break;
-                }
-            }
-        }
+        payload.indexByteOffset = byteOffset;
 
         pVulkanRenderer->DrawElements(payload);
     }
@@ -149,33 +138,37 @@ namespace MobileGL::MG_Backend::DirectVulkan {
 
         const auto vao = MG_State::pGLContext->GetBoundVertexArray();
         payload.vertexArray = vao ? vao.get() : nullptr;
-        if (vao) {
-            const auto& attr0 = vao->GetAttribute(0);
-            if (attr0.Enabled && attr0.Buffer) {
-                const auto positionData = attr0.Buffer->GetDataReadOnly();
-                if (positionData && !positionData->empty()) {
-                    payload.hasPositionStream = true;
-                    payload.positionData = positionData->data();
-                    payload.positionDataSizeBytes = attr0.Buffer->GetSize();
-                    payload.positionOffsetBytes = attr0.Offset;
-                    payload.positionStrideBytes = attr0.Stride > 0 ? static_cast<SizeT>(attr0.Stride) : 0;
-                    payload.positionSize = attr0.Size;
-                    payload.positionNormalized = attr0.Normalized;
-
-                    switch (attr0.Type) {
-                    case DataType::Float32:
-                        payload.positionType = GL_FLOAT;
-                        break;
-                    default:
-                        payload.positionType = GL_FLOAT;
-                        payload.hasPositionStream = false;
-                        break;
-                    }
-                }
-            }
-        }
 
         pVulkanRenderer->DrawArrays(payload);
+    }
+
+    void BlitFramebuffer(GLint srcX0, GLint srcY0, GLint srcX1, GLint srcY1, GLint dstX0, GLint dstY0, GLint dstX1,
+                         GLint dstY1, GLbitfield mask, GLenum filter) {
+        MOBILEGL_ASSERT(pVulkanRenderer, "DirectVulkan::BlitFramebuffer called with null VulkanRenderer");
+        MOBILEGL_ASSERT(MG_State::pGLContext, "DirectVulkan::BlitFramebuffer called with null GL context");
+
+        const auto readFbo = MG_State::pGLContext->GetFramebufferBindingSlot(FramebufferTarget::Read).GetBoundObject();
+        const auto drawFbo = MG_State::pGLContext->GetFramebufferBindingSlot(FramebufferTarget::Draw).GetBoundObject();
+        const auto defaultFboInfo = MG_Impl::GLImpl::FramebufferImpl::pDefaultFramebufferInfo;
+        const auto defaultFbo = defaultFboInfo ? defaultFboInfo->defaultFBO : nullptr;
+
+        const Bool readIsDefault = (readFbo == defaultFbo) || (readFbo == nullptr && defaultFbo != nullptr);
+        const Bool drawIsDefault = (drawFbo == defaultFbo) || (drawFbo == nullptr && defaultFbo != nullptr);
+        Uint readFboExternalIndex = 0;
+        Uint drawFboExternalIndex = 0;
+        if (readFbo) {
+            readFboExternalIndex = readFbo->GetExternalIndex();
+        } else if (defaultFbo) {
+            readFboExternalIndex = defaultFbo->GetExternalIndex();
+        }
+        if (drawFbo) {
+            drawFboExternalIndex = drawFbo->GetExternalIndex();
+        } else if (defaultFbo) {
+            drawFboExternalIndex = defaultFbo->GetExternalIndex();
+        }
+
+        pVulkanRenderer->BlitFramebuffer(srcX0, srcY0, srcX1, srcY1, dstX0, dstY0, dstX1, dstY1, mask, filter,
+                                         readFboExternalIndex, drawFboExternalIndex, readIsDefault, drawIsDefault);
     }
 } // namespace MobileGL::MG_Backend::DirectVulkan
 

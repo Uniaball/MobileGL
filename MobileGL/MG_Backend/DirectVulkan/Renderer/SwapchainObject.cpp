@@ -128,7 +128,20 @@ namespace MobileGL::MG_Backend::DirectVulkan {
         createInfo.imageColorSpace = pickedSurfaceFormat.colorSpace;
         createInfo.imageExtent = swapchainCaps.currentExtent;
         createInfo.imageArrayLayers = 1;
-        createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+        const VkImageUsageFlags requiredImageUsage =
+            VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+        MOBILEGL_ASSERT((swapchainCaps.supportedUsageFlags & requiredImageUsage) == requiredImageUsage,
+                        "Swapchain does not support required usage flags (COLOR_ATTACHMENT | TRANSFER_DST). "
+                        "supportedUsageFlags=0x%x",
+                        static_cast<Uint32>(swapchainCaps.supportedUsageFlags));
+
+        VkImageUsageFlags imageUsage = requiredImageUsage;
+        if ((swapchainCaps.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_SRC_BIT) != 0) {
+            imageUsage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+        }
+        createInfo.imageUsage = imageUsage;
+        MGLOG_I("Swapchain imageUsage = 0x%x (supportedUsageFlags = 0x%x)", static_cast<Uint32>(createInfo.imageUsage),
+                static_cast<Uint32>(swapchainCaps.supportedUsageFlags));
         Uint32 queueFamilyIndices[] = {graphicsQueueFamily, presentQueueFamily};
         if (graphicsQueueFamily != presentQueueFamily) {
             createInfo.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
@@ -141,7 +154,19 @@ namespace MobileGL::MG_Backend::DirectVulkan {
         }
         createInfo.preTransform = swapchainCaps.currentTransform;
         MGLOG_I("Set swapchain preTransform = %s", string_VkSurfaceTransformFlagBitsKHR(createInfo.preTransform));
+        const VkCompositeAlphaFlagBitsKHR compositeAlphaCandidates[] = {
+            VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
+            VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR,
+            VK_COMPOSITE_ALPHA_POST_MULTIPLIED_BIT_KHR,
+            VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR
+        };
         createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+        for (auto candidate : compositeAlphaCandidates) {
+            if ((swapchainCaps.supportedCompositeAlpha & candidate) != 0) {
+                createInfo.compositeAlpha = candidate;
+                break;
+            }
+        }
         createInfo.presentMode = presentMode;
         createInfo.clipped = VK_TRUE;
         createInfo.oldSwapchain = VK_NULL_HANDLE;

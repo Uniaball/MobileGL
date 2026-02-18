@@ -10,6 +10,8 @@
 #include <vector>
 #include <cassert>
 #include <string>
+#include <algorithm>
+#include <cmath>
 
 #include <vulkan/vulkan.h>
 #define GLFW_INCLUDE_NONE
@@ -36,6 +38,10 @@
 #include <objc/objc.h>
 #include <objc/runtime.h>
 #endif
+
+#define NO_GL_H
+#include <Includes.h>
+#undef NO_GL_H
 
 namespace MobileGL {
     void MG_Initialize();
@@ -130,53 +136,59 @@ int main() {
 
     MobileGL::MG_Initialize();
 
+    GLuint offscreenTex = 0;
+    GLuint offscreenFbo = 0;
+    glGenTextures(1, &offscreenTex);
+    glBindTexture(GL_TEXTURE_2D, offscreenTex);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 256, 256, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    glGenFramebuffers(1, &offscreenFbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, offscreenFbo);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, offscreenTex, 0);
+    const GLenum offscreenFboStatus = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+    std::cout << "Offscreen FBO status = 0x" << std::hex << offscreenFboStatus << std::dec << std::endl;
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    static constexpr GLint kWindowWidth = 800;
+    static constexpr GLint kWindowHeight = 600;
+    glViewport(0, 0, kWindowWidth, kWindowHeight);
+
+    static constexpr int kMaxSegments = 192;
+    static constexpr float kPi = 3.14159265358979323846f;
+
     GLuint vao = 0;
     glGenVertexArrays(1, &vao);
     glBindVertexArray(vao);
 
-    static constexpr GLfloat kQuadPositions[] = {
-        // triangle 1
-        -0.6f, -0.6f,
-         0.6f, -0.6f,
-         0.6f,  0.6f,
-        // triangle 2
-         0.6f,  0.6f,
-        -0.6f,  0.6f,
-        -0.6f, -0.6f
-    };
-
-    static constexpr GLfloat kQuadColors[] = {
-        // triangle 1: RGB
-        1.0f, 0.0f, 0.0f,
-        0.0f, 1.0f, 0.0f,
-        0.0f, 0.0f, 1.0f,
-        // triangle 2: RGB
-        1.0f, 0.0f, 0.0f,
-        0.0f, 1.0f, 0.0f,
-        0.0f, 0.0f, 1.0f
-    };
-
-    GLuint positionVbo = 0;
-    glGenBuffers(1, &positionVbo);
-    glBindBuffer(GL_ARRAY_BUFFER, positionVbo);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(kQuadPositions), kQuadPositions, GL_STATIC_DRAW);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, static_cast<GLsizei>(2 * sizeof(GLfloat)), nullptr);
+    GLuint shapeVbo = 0;
+    glGenBuffers(1, &shapeVbo);
+    glBindBuffer(GL_ARRAY_BUFFER, shapeVbo);
+    glBufferData(
+        GL_ARRAY_BUFFER,
+        static_cast<GLsizeiptr>((kMaxSegments + 1) * 5 * sizeof(GLfloat)),
+        nullptr,
+        GL_DYNAMIC_DRAW
+    );
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, static_cast<GLsizei>(5 * sizeof(GLfloat)), nullptr);
     glEnableVertexAttribArray(0);
-
-    GLuint colorVbo = 0;
-    glGenBuffers(1, &colorVbo);
-    glBindBuffer(GL_ARRAY_BUFFER, colorVbo);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(kQuadColors), kQuadColors, GL_STATIC_DRAW);
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, static_cast<GLsizei>(3 * sizeof(GLfloat)), nullptr);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, static_cast<GLsizei>(5 * sizeof(GLfloat)),
+                          reinterpret_cast<void*>(2 * sizeof(GLfloat)));
     glEnableVertexAttribArray(1);
 
-    static constexpr GLushort kQuadIndices[] = {0, 1, 2, 3, 4, 5};
-    GLuint ebo = 0;
-    glGenBuffers(1, &ebo);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(kQuadIndices), kQuadIndices, GL_STATIC_DRAW);
+    GLuint shapeIbo = 0;
+    glGenBuffers(1, &shapeIbo);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, shapeIbo);
+    glBufferData(
+        GL_ELEMENT_ARRAY_BUFFER,
+        static_cast<GLsizeiptr>(kMaxSegments * 3 * sizeof(GLushort)),
+        nullptr,
+        GL_DYNAMIC_DRAW
+    );
 
-static constexpr const char* kVertexShaderSource = R"(#version 330 core
+    static constexpr const char* kVertexShaderSource = R"(#version 330 core
 layout(location = 0) in vec2 aPos;
 layout(location = 1) in vec3 aColor;
 out vec3 vColor;
@@ -216,28 +228,86 @@ void main() {
     glDeleteShader(vs);
     glDeleteShader(fs);
 
+    std::vector<GLfloat> dynamicVertices(static_cast<size_t>((kMaxSegments + 1) * 5));
+    std::vector<GLushort> dynamicIndices(static_cast<size_t>(kMaxSegments * 3));
     int i = 0;
     while(!glfwWindowShouldClose(window)) {
         glfwPollEvents();
 
-        if (i % 1000 > 500)
+        GLint framebufferWidth = kWindowWidth;
+        GLint framebufferHeight = kWindowHeight;
+        glfwGetFramebufferSize(window, &framebufferWidth, &framebufferHeight);
+        glViewport(0, 0, framebufferWidth, framebufferHeight);
+
+        const bool useOffscreenPath = ((i / 100) % 2) == 0;
+        if (useOffscreenPath) {
+            glBindFramebuffer(GL_FRAMEBUFFER, offscreenFbo);
             glClearColor(1.0f, 0.0f, 0.0f, 1.0f);
-        else
-            glClearColor(0.0f, 1.0f, 0.0f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT);
-        if (i % 500 > 250) {
+            glClear(GL_COLOR_BUFFER_BIT);
+
+            glBindFramebuffer(GL_READ_FRAMEBUFFER, offscreenFbo);
+            glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+            glBlitFramebuffer(0, 0, 256, 256, 0, 0, framebufferWidth, framebufferHeight, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        } else {
+            const int segmentCount = std::min(kMaxSegments, 3 + (i / 100));
+            const float radius = 0.75f;
+            const float rotation = static_cast<float>(i) * 0.01f;
+
+            const size_t vertexFloatCount = static_cast<size_t>((segmentCount + 1) * 5);
+            const size_t indexCount = static_cast<size_t>(segmentCount * 3);
+
+            dynamicVertices[0] = 0.0f;
+            dynamicVertices[1] = 0.0f;
+            dynamicVertices[2] = 0.95f;
+            dynamicVertices[3] = 0.95f;
+            dynamicVertices[4] = 0.95f;
+
+            for (int v = 0; v < segmentCount; ++v) {
+                const float theta = rotation + (2.0f * kPi * static_cast<float>(v) / static_cast<float>(segmentCount));
+                const float x = radius * std::cos(theta);
+                const float y = radius * std::sin(theta);
+                const size_t base = static_cast<size_t>((v + 1) * 5);
+                dynamicVertices[base + 0] = x;
+                dynamicVertices[base + 1] = y;
+                dynamicVertices[base + 2] = 0.5f + 0.5f * std::cos(theta);
+                dynamicVertices[base + 3] = 0.5f + 0.5f * std::sin(theta);
+                dynamicVertices[base + 4] = 0.9f;
+
+                const size_t ib = static_cast<size_t>(v * 3);
+                dynamicIndices[ib + 0] = 0;
+                dynamicIndices[ib + 1] = static_cast<GLushort>(v + 1);
+                dynamicIndices[ib + 2] = static_cast<GLushort>((v + 1) % segmentCount + 1);
+            }
+
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            glClearColor(0.05f, 0.08f, 0.12f, 1.0f);
+            glClear(GL_COLOR_BUFFER_BIT);
+
             glUseProgram(program);
-            glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_SHORT, nullptr);
+            glBindVertexArray(vao);
+            glBindBuffer(GL_ARRAY_BUFFER, shapeVbo);
+            glBufferSubData(GL_ARRAY_BUFFER, 0, static_cast<GLsizeiptr>(vertexFloatCount * sizeof(GLfloat)), dynamicVertices.data());
+            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, shapeIbo);
+            glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, static_cast<GLsizeiptr>(indexCount * sizeof(GLushort)), dynamicIndices.data());
+            glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(indexCount), GL_UNSIGNED_SHORT, nullptr);
+        }
+
+        if (i % 100 == 0) {
+            std::cout << "frame=" << i
+                      << " path=" << (useOffscreenPath ? "offscreen-clear+blit" : "dynamic-vbo-vao-ibo-archimedes")
+                      << std::endl;
         }
         eglSwapBuffers(display, surface);
         ++i;
     }
 
     glDeleteProgram(program);
-    glDeleteBuffers(1, &positionVbo);
-    glDeleteBuffers(1, &colorVbo);
-    glDeleteBuffers(1, &ebo);
+    glDeleteBuffers(1, &shapeVbo);
+    glDeleteBuffers(1, &shapeIbo);
     glDeleteVertexArrays(1, &vao);
+    glDeleteFramebuffers(1, &offscreenFbo);
+    glDeleteTextures(1, &offscreenTex);
 
     glfwDestroyWindow(window);
 

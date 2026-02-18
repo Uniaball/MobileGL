@@ -35,7 +35,7 @@ namespace MobileGL {
                 Int GetUniformMaxLength() const { return m_uniformNameMaxLength; }
                 Uint GetUniformCount() { return m_activeUniformCount; }
                 Uint GetMaxUniformLocation() const { return m_maxUniformLocation; }
-                Int GetUniformLocation(const String& name) {
+                Int GetUniformLocation(const String& name) const {
                     const auto it = m_uniformLocations.find(name);
                     if (it == m_uniformLocations.end()) return -1;
                     return (Int)it->second;
@@ -69,6 +69,7 @@ namespace MobileGL {
                 GLenum GetAttribType(Uint index) const { return m_attribTypes[index]; }
                 const String& GetAttribName(Uint index) const { return m_attribs[index]; }
                 void* MapUBO() { return m_uboScratch.data(); }
+                const void* GetUBOData() const { return m_uboScratch.data(); }
                 Uint GetUBOSize() const { return static_cast<Uint>(m_uboScratch.size()); }
 
                 void SetUniformSamplerOrImageUnitIndex(Uint location, Int unit) {

@@ -21,6 +21,15 @@ namespace MobileGL::MG_Backend::DirectVulkan {
         XXHASH_VERIFY(XXH64_update(m_hashState, &payload.renderPass, sizeof(payload.renderPass)));
         XXHASH_VERIFY(XXH64_update(m_hashState, &payload.subpass, sizeof(payload.subpass)));
         XXHASH_VERIFY(XXH64_update(m_hashState, &payload.topology, sizeof(payload.topology)));
+        XXHASH_VERIFY(XXH64_update(m_hashState, &payload.depthTestEnable, sizeof(payload.depthTestEnable)));
+        XXHASH_VERIFY(XXH64_update(m_hashState, &payload.depthWriteEnable, sizeof(payload.depthWriteEnable)));
+        XXHASH_VERIFY(XXH64_update(m_hashState, &payload.depthCompareOp, sizeof(payload.depthCompareOp)));
+        XXHASH_VERIFY(XXH64_update(m_hashState, &payload.blendEnable, sizeof(payload.blendEnable)));
+        XXHASH_VERIFY(XXH64_update(m_hashState, &payload.srcColorBlendFactor, sizeof(payload.srcColorBlendFactor)));
+        XXHASH_VERIFY(XXH64_update(m_hashState, &payload.dstColorBlendFactor, sizeof(payload.dstColorBlendFactor)));
+        XXHASH_VERIFY(XXH64_update(m_hashState, &payload.srcAlphaBlendFactor, sizeof(payload.srcAlphaBlendFactor)));
+        XXHASH_VERIFY(XXH64_update(m_hashState, &payload.dstAlphaBlendFactor, sizeof(payload.dstAlphaBlendFactor)));
+        XXHASH_VERIFY(XXH64_update(m_hashState, &payload.colorWriteMask, sizeof(payload.colorWriteMask)));
         return XXH64_digest(m_hashState);
     }
 
@@ -78,16 +87,21 @@ namespace MobileGL::MG_Backend::DirectVulkan {
         ms.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
 
         VkPipelineDepthStencilStateCreateInfo depthStencil{VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
-        depthStencil.depthTestEnable = VK_FALSE;
-        depthStencil.depthWriteEnable = VK_FALSE;
-        depthStencil.depthCompareOp = VK_COMPARE_OP_ALWAYS;
+        depthStencil.depthTestEnable = payload.depthTestEnable ? VK_TRUE : VK_FALSE;
+        depthStencil.depthWriteEnable = payload.depthWriteEnable ? VK_TRUE : VK_FALSE;
+        depthStencil.depthCompareOp = payload.depthCompareOp;
         depthStencil.depthBoundsTestEnable = VK_FALSE;
         depthStencil.stencilTestEnable = VK_FALSE;
 
         VkPipelineColorBlendAttachmentState colorAttach{};
-        colorAttach.colorWriteMask =
-            VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-        colorAttach.blendEnable = VK_FALSE;
+        colorAttach.colorWriteMask = payload.colorWriteMask;
+        colorAttach.blendEnable = payload.blendEnable ? VK_TRUE : VK_FALSE;
+        colorAttach.srcColorBlendFactor = payload.srcColorBlendFactor;
+        colorAttach.dstColorBlendFactor = payload.dstColorBlendFactor;
+        colorAttach.colorBlendOp = VK_BLEND_OP_ADD;
+        colorAttach.srcAlphaBlendFactor = payload.srcAlphaBlendFactor;
+        colorAttach.dstAlphaBlendFactor = payload.dstAlphaBlendFactor;
+        colorAttach.alphaBlendOp = VK_BLEND_OP_ADD;
         VkPipelineColorBlendStateCreateInfo blend{VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
         blend.attachmentCount = 1;
         blend.pAttachments = &colorAttach;
